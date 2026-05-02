@@ -2,6 +2,7 @@ package handler
 
 import (
 	"opsmanage/internal/config"
+	"opsmanage/internal/middleware"
 	"opsmanage/internal/model"
 
 	"github.com/gin-gonic/gin"
@@ -44,6 +45,7 @@ func CreateSecurityRule(c *gin.Context) {
 		fail(c, 500, "创建失败")
 		return
 	}
+	middleware.ReloadRules()
 	addLog("info", "security", "创建安全规则: "+rule.Name+" ("+rule.Type+")")
 	success(c, rule)
 }
@@ -66,7 +68,7 @@ func UpdateSecurityRule(c *gin.Context) {
 		return
 	}
 
-	var updates map[string]interface{}
+	var updates map[string]any
 	if err := c.ShouldBindJSON(&updates); err != nil {
 		fail(c, 400, "参数错误")
 		return
@@ -75,6 +77,7 @@ func UpdateSecurityRule(c *gin.Context) {
 	delete(updates, "created_at")
 	config.DB.Model(&rule).Updates(updates)
 	config.DB.First(&rule, id)
+	middleware.ReloadRules()
 	success(c, rule)
 }
 
@@ -84,6 +87,7 @@ func DeleteSecurityRule(c *gin.Context) {
 		fail(c, 500, "删除失败")
 		return
 	}
+	middleware.ReloadRules()
 	success(c, nil)
 }
 
@@ -100,5 +104,6 @@ func ToggleSecurityRule(c *gin.Context) {
 		config.DB.Model(&rule).Update("status", "enabled")
 	}
 	config.DB.First(&rule, id)
+	middleware.ReloadRules()
 	success(c, rule)
 }

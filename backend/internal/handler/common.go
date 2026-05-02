@@ -10,10 +10,12 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		return r.Header.Get("Origin") == "" || r.Header.Get("Origin") == "http://"+r.Host || r.Header.Get("Origin") == "https://"+r.Host
+	},
 }
 
-func success(c *gin.Context, data interface{}) {
+func success(c *gin.Context, data any) {
 	c.JSON(200, gin.H{"code": 200, "msg": "操作成功", "data": data})
 }
 
@@ -21,7 +23,7 @@ func fail(c *gin.Context, code int, msg string) {
 	c.JSON(200, gin.H{"code": code, "msg": msg})
 }
 
-func pageResult(c *gin.Context, list interface{}, total int64) {
+func pageResult(c *gin.Context, list any, total int64) {
 	c.JSON(200, gin.H{"code": 200, "msg": "ok", "data": gin.H{"list": list, "total": total}})
 }
 

@@ -1,17 +1,23 @@
 package handler
 
 import (
-	"crypto/rand"
+	"bytes"
 	"encoding/base64"
+	"fmt"
 	"opsmanage/internal/config"
 	"opsmanage/internal/middleware"
 	"opsmanage/internal/model"
 	"strings"
 	"time"
 
+	"github.com/dchest/captcha"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 )
+
+func base64Encode(data []byte) string {
+	return base64.StdEncoding.EncodeToString(data)
+}
 
 func addLog(level, source, message string) {
 	config.DB.Create(&model.LogEntry{
@@ -22,14 +28,23 @@ func addLog(level, source, message string) {
 }
 
 type LoginReq struct {
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
+	Username    string `json:"username" binding:"required"`
+	Password    string `json:"password" binding:"required"`
+	CaptchaID   string `json:"captcha_id" binding:"required"`
+	CaptchaCode string `json:"captcha_code" binding:"required"`
 }
 
 func Login(c *gin.Context) {
 	var req LoginReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, 400, "参数错误")
+		return
+	}
+
+	// Validate captcha
+	if !captcha.VerifyString(req.CaptchaID, req.CaptchaCode) {
+		addLog("warn", "auth", "登录失败: 验证码错误, IP: "+c.ClientIP())
+		fail(c, 400, "验证码错误")
 		return
 	}
 
@@ -52,7 +67,7 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	config.DB.Model(&user).Updates(map[string]interface{}{
+	config.DB.Model(&user).Updates(map[string]any{
 		"last_login": time.Now(),
 		"ip":         c.ClientIP(),
 	})
@@ -74,6 +89,7 @@ type RegisterReq struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
 	Email    string `json:"email"`
+	Role     string `json:"role"`
 }
 
 func Register(c *gin.Context) {
@@ -81,6 +97,12 @@ func Register(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, 400, "参数错误")
 		return
+	}
+
+	// Default to normal user, only allow admin if requester is admin
+	role := "user"
+	if req.Role == "admin" {
+		role = "admin"
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
@@ -94,7 +116,7 @@ func Register(c *gin.Context) {
 		Password: string(hash),
 		Email:    req.Email,
 		Nickname: req.Username,
-		Role:     "admin",
+		Role:     role,
 	}
 
 	if err := config.DB.Create(&user).Error; err != nil {
@@ -102,7 +124,50 @@ func Register(c *gin.Context) {
 		return
 	}
 
+	requester, _ := c.Get("username")
+	addLog("info", "auth", requester.(string)+" 创建用户: "+user.Username+" (role: "+role+")")
 	success(c, gin.H{"id": user.ID})
+}
+
+func ListUsers(c *gin.Context) {
+	var users []model.User
+	config.DB.Order("id desc").Find(&users)
+	var result []gin.H
+	for _, u := range users {
+		result = append(result, gin.H{
+			"id":         u.ID,
+			"username":   u.Username,
+			"nickname":   u.Nickname,
+			"email":      u.Email,
+			"role":       u.Role,
+			"last_login": u.LastLogin,
+			"ip":         u.IP,
+			"created_at": u.CreatedAt,
+		})
+	}
+	success(c, result)
+}
+
+func DeleteUser(c *gin.Context) {
+	id := c.Param("id")
+	uid, _ := c.Get("user_id")
+
+	// Cannot delete yourself
+	if fmt.Sprintf("%v", uid) == id {
+		fail(c, 400, "不能删除当前登录用户")
+		return
+	}
+
+	var user model.User
+	if err := config.DB.First(&user, id).Error; err != nil {
+		fail(c, 404, "用户不存在")
+		return
+	}
+
+	config.DB.Delete(&user)
+	requester, _ := c.Get("username")
+	addLog("info", "auth", requester.(string)+" 删除用户: "+user.Username)
+	success(c, nil)
 }
 
 func Logout(c *gin.Context) {
@@ -119,12 +184,13 @@ func Logout(c *gin.Context) {
 }
 
 func Captcha(c *gin.Context) {
-	b := make([]byte, 32)
-	rand.Read(b)
-	id := base64.URLEncoding.EncodeToString(b)[:16]
+	id := captcha.NewLen(4)
+	var buf bytes.Buffer
+	captcha.WriteImage(&buf, id, 200, 80)
+	imgBase64 := "data:image/png;base64," + base64Encode(buf.Bytes())
 	c.JSON(200, gin.H{
 		"captcha_id": id,
-		"captcha":    strings.Repeat("●", 4),
+		"captcha":    imgBase64,
 	})
 }
 

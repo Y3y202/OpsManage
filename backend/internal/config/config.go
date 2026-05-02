@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -21,9 +22,10 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Host string `yaml:"host"`
-	Port int    `yaml:"port"`
-	Mode string `yaml:"mode"`
+	Host        string   `yaml:"host"`
+	Port        int      `yaml:"port"`
+	Mode        string   `yaml:"mode"`
+	CORSOrigins []string `yaml:"cors_origins"`
 }
 
 type DatabaseConfig struct {
@@ -55,6 +57,19 @@ func Load() *Config {
 		}
 	}
 	AppConfig = cfg
+
+	// Reject default/insecure JWT secrets
+	defaultSecrets := []string{
+		"opsmanage-jwt-secret-change-in-production",
+		"change-me-to-a-random-string",
+		"",
+	}
+	for _, s := range defaultSecrets {
+		if cfg.JWT.Secret == s {
+			log.Fatalf("❌ JWT secret 不安全，请修改 config.yaml 中的 jwt.secret（当前为默认值）")
+		}
+	}
+
 	return cfg
 }
 
@@ -69,7 +84,7 @@ func defaultConfig() *Config {
 			Path: "./data/opsmanage.db",
 		},
 		JWT: JWTConfig{
-			Secret:      "opsmanage-jwt-secret-change-in-production",
+			Secret:      "",
 			ExpireHours: 168,
 		},
 		Panel: PanelConfig{
@@ -106,13 +121,17 @@ func InitDB(cfg *Config) error {
 	var count int64
 	db.Model(&model.User{}).Count(&count)
 	if count == 0 {
-		hash, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+		hash, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+		if err != nil {
+			return fmt.Errorf("生成默认密码失败: %w", err)
+		}
 		db.Create(&model.User{
 			Username: "admin",
 			Password: string(hash),
 			Nickname: "管理员",
 			Role:     "admin",
 		})
+		log.Println("⚠️  已创建默认管理员账号 admin / admin123，请首次登录后立即修改密码")
 	}
 
 	return nil

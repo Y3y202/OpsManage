@@ -6,11 +6,45 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
+
+// validatePath cleans and validates a file path to prevent traversal attacks
+// and protect sensitive system files.
+func validatePath(p string) (string, error) {
+	// Clean the path (resolve .., ., double slashes)
+	cleaned := filepath.Clean(p)
+
+	// Reject obvious traversal from relative paths
+	if strings.Contains(p, "..") {
+		abs, err := filepath.Abs(cleaned)
+		if err != nil {
+			return "", err
+		}
+		// Allow absolute paths (the admin manages the full server)
+		cleaned = abs
+	}
+
+	// Block access to critical system files
+	blocked := []string{
+		"/etc/shadow",
+		"/etc/passwd",
+		"/etc/sudoers",
+		"/etc/ssh/sshd_config",
+	}
+	lower := strings.ToLower(cleaned)
+	for _, b := range blocked {
+		if lower == b {
+			return "", os.ErrPermission
+		}
+	}
+
+	return cleaned, nil
+}
 
 type FileInfo struct {
 	Name    string `json:"name"`
@@ -23,6 +57,11 @@ type FileInfo struct {
 
 func ListFiles(c *gin.Context) {
 	dirPath := c.DefaultQuery("path", "/")
+	dirPath, err := validatePath(dirPath)
+	if err != nil {
+		fail(c, 403, "路径不允许访问")
+		return
+	}
 	if !filepath.IsAbs(dirPath) {
 		dirPath, _ = filepath.Abs(dirPath)
 	}
@@ -68,6 +107,11 @@ func ReadFile(c *gin.Context) {
 		fail(c, 400, "缺少文件路径")
 		return
 	}
+	filePath, err := validatePath(filePath)
+	if err != nil {
+		fail(c, 403, "路径不允许访问")
+		return
+	}
 
 	info, err := os.Stat(filePath)
 	if err != nil {
@@ -110,8 +154,13 @@ func SaveFile(c *gin.Context) {
 		fail(c, 400, "参数错误")
 		return
 	}
+	validatedPath, err := validatePath(req.Path)
+	if err != nil {
+		fail(c, 403, "路径不允许访问")
+		return
+	}
 
-	if err := os.WriteFile(req.Path, []byte(req.Content), 0644); err != nil {
+	if err := os.WriteFile(validatedPath, []byte(req.Content), 0644); err != nil {
 		fail(c, 500, "保存失败")
 		return
 	}
@@ -122,6 +171,11 @@ func DownloadFile(c *gin.Context) {
 	filePath := c.Query("path")
 	if filePath == "" {
 		fail(c, 400, "缺少文件路径")
+		return
+	}
+	filePath, err := validatePath(filePath)
+	if err != nil {
+		fail(c, 403, "路径不允许访问")
 		return
 	}
 
@@ -145,6 +199,11 @@ func UploadFile(c *gin.Context) {
 	if dir == "" {
 		dir = "/tmp"
 	}
+	dir, err := validatePath(dir)
+	if err != nil {
+		fail(c, 403, "路径不允许访问")
+		return
+	}
 
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -152,7 +211,13 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
-	dest := filepath.Join(dir, file.Filename)
+	// Sanitize filename to prevent traversal
+	filename := filepath.Base(file.Filename)
+	dest := filepath.Join(dir, filename)
+	if _, err := validatePath(dest); err != nil {
+		fail(c, 403, "路径不允许访问")
+		return
+	}
 	if err := c.SaveUploadedFile(file, dest); err != nil {
 		fail(c, 500, "保存失败")
 		return
@@ -169,7 +234,17 @@ func RenameFile(c *gin.Context) {
 		fail(c, 400, "参数错误")
 		return
 	}
-	if err := os.Rename(req.OldPath, req.NewPath); err != nil {
+	oldPath, err := validatePath(req.OldPath)
+	if err != nil {
+		fail(c, 403, "路径不允许访问")
+		return
+	}
+	newPath, err := validatePath(req.NewPath)
+	if err != nil {
+		fail(c, 403, "路径不允许访问")
+		return
+	}
+	if err := os.Rename(oldPath, newPath); err != nil {
 		fail(c, 500, "重命名失败")
 		return
 	}
@@ -180,6 +255,11 @@ func DeleteFile(c *gin.Context) {
 	filePath := c.Query("path")
 	if filePath == "" {
 		fail(c, 400, "缺少文件路径")
+		return
+	}
+	filePath, err := validatePath(filePath)
+	if err != nil {
+		fail(c, 403, "路径不允许访问")
 		return
 	}
 	if err := os.RemoveAll(filePath); err != nil {
@@ -197,7 +277,12 @@ func Mkdir(c *gin.Context) {
 		fail(c, 400, "参数错误")
 		return
 	}
-	if err := os.MkdirAll(req.Path, 0755); err != nil {
+	validatedPath, err := validatePath(req.Path)
+	if err != nil {
+		fail(c, 403, "路径不允许访问")
+		return
+	}
+	if err := os.MkdirAll(validatedPath, 0755); err != nil {
 		fail(c, 500, "创建目录失败")
 		return
 	}
@@ -213,8 +298,18 @@ func CopyFile(c *gin.Context) {
 		fail(c, 400, "参数错误")
 		return
 	}
+	srcPath, err := validatePath(req.Src)
+	if err != nil {
+		fail(c, 403, "源路径不允许访问")
+		return
+	}
+	dstPath, err := validatePath(req.Dst)
+	if err != nil {
+		fail(c, 403, "目标路径不允许访问")
+		return
+	}
 
-	srcFile, err := os.Open(req.Src)
+	srcFile, err := os.Open(srcPath)
 	if err != nil {
 		fail(c, 404, "源文件不存在")
 		return
@@ -232,7 +327,7 @@ func CopyFile(c *gin.Context) {
 		return
 	}
 
-	dstFile, err := os.Create(req.Dst)
+	dstFile, err := os.Create(dstPath)
 	if err != nil {
 		fail(c, 500, "创建目标文件失败")
 		return
@@ -306,7 +401,9 @@ func (h *WSHub) run() {
 
 var wsFileHub = NewWSHub()
 var wsFileUpgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		return r.Header.Get("Origin") == "" || r.Header.Get("Origin") == "http://"+r.Host || r.Header.Get("Origin") == "https://"+r.Host
+	},
 }
 
 func WSFileHandler(c *gin.Context) {

@@ -3,6 +3,7 @@ module opsmanage
 go 1.25.4
 
 require (
+	github.com/dchest/captcha v1.1.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/sqlite v1.11.0
 	github.com/golang-jwt/jwt/v5 v5.3.1

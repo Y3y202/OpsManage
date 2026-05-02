@@ -5,6 +5,7 @@ import (
 	"opsmanage/internal/config"
 	"opsmanage/internal/handler"
 	"opsmanage/internal/middleware"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,6 +19,7 @@ func Run(cfg *config.Config) error {
 
 	r.Use(middleware.CORS())
 	r.Use(gin.Recovery())
+	r.Use(middleware.SecurityCheck())
 
 	r.Static("/static", "./static")
 	r.StaticFile("/favicon.ico", "./static/favicon.ico")
@@ -30,7 +32,6 @@ func Run(cfg *config.Config) error {
 		auth := api.Group("/auth")
 		{
 			auth.POST("/login", handler.Login)
-			auth.POST("/register", handler.Register)
 			auth.POST("/logout", handler.Logout)
 			auth.GET("/captcha", handler.Captcha)
 		}
@@ -40,6 +41,15 @@ func Run(cfg *config.Config) error {
 		{
 			secure.GET("/profile", handler.GetProfile)
 			secure.PUT("/password", handler.ChangePassword)
+
+			// 用户管理（仅管理员）
+			userMgmt := secure.Group("")
+			userMgmt.Use(middleware.AdminOnly())
+			{
+				userMgmt.POST("/auth/register", handler.Register)
+				userMgmt.GET("/users", handler.ListUsers)
+				userMgmt.DELETE("/users/:id", handler.DeleteUser)
+			}
 
 			dashboard := secure.Group("/dashboard")
 			{
@@ -145,19 +155,5 @@ func Run(cfg *config.Config) error {
 		}
 	})
 
-	return r.Run(cfg.Server.Host + ":" + itoa(cfg.Server.Port))
-}
-
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	var b [20]byte
-	n := len(b)
-	for i > 0 {
-		n--
-		b[n] = byte('0' + i%10)
-		i /= 10
-	}
-	return string(b[n:])
+	return r.Run(cfg.Server.Host + ":" + strconv.Itoa(cfg.Server.Port))
 }

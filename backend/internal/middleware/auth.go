@@ -51,7 +51,7 @@ func GenerateToken(userID uint, username, role string) (string, error) {
 }
 
 func ValidateToken(tokenStr string) (*Claims, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (any, error) {
 		return []byte(config.AppConfig.JWT.Secret), nil
 	})
 	if err != nil {
@@ -99,15 +99,40 @@ func JWTAuth() gin.HandlerFunc {
 	}
 }
 
+// AdminOnly restricts access to admin users. Must be used after JWTAuth.
+func AdminOnly() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, _ := c.Get("role")
+		if role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "需要管理员权限"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 func CORS() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
 		if origin != "" {
-			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			// Only reflect origin if it matches the configured allowed list
+			allowed := config.AppConfig.Server.CORSOrigins
+			if len(allowed) == 0 {
+				// No CORS origins configured — do not reflect arbitrary origin
+				c.Next()
+				return
+			}
+			for _, o := range allowed {
+				if o == origin || o == "*" {
+					c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+					c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+					break
+				}
+			}
 		}
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusNoContent)
 			return

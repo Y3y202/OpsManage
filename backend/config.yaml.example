@@ -2,12 +2,15 @@ server:
   host: "0.0.0.0"
   port: 9090
   mode: debug
+  # CORS 白名单，留空则不允许跨域（推荐生产环境配置具体域名）
+  # cors_origins:
+  #   - "http://localhost:5173"
 
 database:
   path: "./data/opsmanage.db"
 
 jwt:
-  secret: "change-me-to-a-random-string"
+  secret: "请替换为至少32位随机字符串"  # 生产环境务必修改！
   expire_hours: 168
 
 panel:
