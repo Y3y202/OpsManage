@@ -74,7 +74,6 @@ onMounted(fetchCaptcha)
           <el-button type="primary" :loading="loading" style="width: 100%" size="large" @click="handleLogin">登 录</el-button>
         </el-form-item>
       </el-form>
-      <div style="text-align: center; color: #999; font-size: 12px">默认账号: admin / admin123</div>
     </el-card>
   </div>
 </template>

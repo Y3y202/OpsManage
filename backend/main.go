@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"opsmanage/internal/config"
+	"opsmanage/internal/middleware"
 	"opsmanage/internal/router"
 	"opsmanage/internal/scheduler"
 )
@@ -17,6 +18,7 @@ func main() {
 	config.InitStatic()
 
 	scheduler.Init()
+	middleware.StartBlacklistCleanup()
 
 	log.Printf("🚀 OpsManage 启动中，监听 %s:%d", cfg.Server.Host, cfg.Server.Port)
 	if err := router.Run(cfg); err != nil {

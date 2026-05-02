@@ -67,14 +67,24 @@ func UpdateTask(c *gin.Context) {
 		return
 	}
 
-	var updates map[string]any
-	if err := c.ShouldBindJSON(&updates); err != nil {
+	var req struct {
+		Name     *string `json:"name"`
+		Command  *string `json:"command"`
+		CronExpr *string `json:"cron_expr"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, 400, "参数错误")
 		return
 	}
-	delete(updates, "id")
-	delete(updates, "created_at")
-	config.DB.Model(&task).Updates(updates)
+
+	updates := map[string]any{}
+	if req.Name != nil { updates["name"] = *req.Name }
+	if req.Command != nil { updates["command"] = *req.Command }
+	if req.CronExpr != nil { updates["cron_expr"] = *req.CronExpr }
+
+	if len(updates) > 0 {
+		config.DB.Model(&task).Updates(updates)
+	}
 	config.DB.First(&task, id)
 	scheduler.ReloadTask(task)
 	success(c, task)

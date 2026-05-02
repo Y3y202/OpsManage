@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log"
 	"net/http"
 	"opsmanage/internal/config"
 	"strings"
@@ -12,14 +13,14 @@ import (
 )
 
 var (
-	tokenBlacklist = make(map[string]struct{})
+	tokenBlacklist = make(map[string]time.Time) // token -> blacklisted at
 	blacklistMu    sync.RWMutex
 )
 
 func BlacklistToken(tokenStr string) {
 	blacklistMu.Lock()
 	defer blacklistMu.Unlock()
-	tokenBlacklist[tokenStr] = struct{}{}
+	tokenBlacklist[tokenStr] = time.Now()
 }
 
 func isTokenBlacklisted(tokenStr string) bool {
@@ -27,6 +28,29 @@ func isTokenBlacklisted(tokenStr string) bool {
 	defer blacklistMu.RUnlock()
 	_, ok := tokenBlacklist[tokenStr]
 	return ok
+}
+
+// StartBlacklistCleanup periodically removes expired tokens from the blacklist.
+func StartBlacklistCleanup() {
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			cutoff := time.Now().Add(-time.Duration(config.AppConfig.JWT.ExpireHours) * time.Hour)
+			blacklistMu.Lock()
+			count := 0
+			for token, ts := range tokenBlacklist {
+				if ts.Before(cutoff) {
+					delete(tokenBlacklist, token)
+					count++
+				}
+			}
+			blacklistMu.Unlock()
+			if count > 0 {
+				log.Printf("Token 黑名单清理: 移除 %d 条过期记录", count)
+			}
+		}
+	}()
 }
 
 type Claims struct {

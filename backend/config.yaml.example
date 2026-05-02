@@ -5,6 +5,9 @@ server:
   # CORS 白名单，留空则不允许跨域（推荐生产环境配置具体域名）
   # cors_origins:
   #   - "http://localhost:5173"
+  # HTTPS 配置（留空则使用 HTTP）
+  # tls_cert: "/path/to/cert.pem"
+  # tls_key: "/path/to/key.pem"
 
 database:
   path: "./data/opsmanage.db"

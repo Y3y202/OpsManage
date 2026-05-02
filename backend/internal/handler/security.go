@@ -68,14 +68,26 @@ func UpdateSecurityRule(c *gin.Context) {
 		return
 	}
 
-	var updates map[string]any
-	if err := c.ShouldBindJSON(&updates); err != nil {
+	var req struct {
+		Name     *string `json:"name"`
+		Content  *string `json:"content"`
+		Priority *int    `json:"priority"`
+		Remark   *string `json:"remark"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, 400, "参数错误")
 		return
 	}
-	delete(updates, "id")
-	delete(updates, "created_at")
-	config.DB.Model(&rule).Updates(updates)
+
+	updates := map[string]any{}
+	if req.Name != nil { updates["name"] = *req.Name }
+	if req.Content != nil { updates["content"] = *req.Content }
+	if req.Priority != nil { updates["priority"] = *req.Priority }
+	if req.Remark != nil { updates["remark"] = *req.Remark }
+
+	if len(updates) > 0 {
+		config.DB.Model(&rule).Updates(updates)
+	}
 	config.DB.First(&rule, id)
 	middleware.ReloadRules()
 	success(c, rule)

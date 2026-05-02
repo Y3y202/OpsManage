@@ -26,6 +26,8 @@ type ServerConfig struct {
 	Port        int      `yaml:"port"`
 	Mode        string   `yaml:"mode"`
 	CORSOrigins []string `yaml:"cors_origins"`
+	TLSCert     string   `yaml:"tls_cert"`
+	TLSKey      string   `yaml:"tls_key"`
 }
 
 type DatabaseConfig struct {

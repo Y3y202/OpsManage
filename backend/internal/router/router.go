@@ -1,11 +1,13 @@
 package router
 
 import (
+	"log"
 	"os"
 	"opsmanage/internal/config"
 	"opsmanage/internal/handler"
 	"opsmanage/internal/middleware"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -14,6 +16,9 @@ func Run(cfg *config.Config) error {
 	if cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)
 	}
+
+	// Login rate limiter: 10 requests per minute per IP
+	loginLimiter := middleware.NewRateLimiter(10, time.Minute)
 
 	r := gin.Default()
 
@@ -31,7 +36,7 @@ func Run(cfg *config.Config) error {
 	{
 		auth := api.Group("/auth")
 		{
-			auth.POST("/login", handler.Login)
+			auth.POST("/login", loginLimiter.Middleware(), handler.Login)
 			auth.POST("/logout", handler.Logout)
 			auth.GET("/captcha", handler.Captcha)
 		}
@@ -155,5 +160,10 @@ func Run(cfg *config.Config) error {
 		}
 	})
 
-	return r.Run(cfg.Server.Host + ":" + strconv.Itoa(cfg.Server.Port))
+	addr := cfg.Server.Host + ":" + strconv.Itoa(cfg.Server.Port)
+	if cfg.Server.TLSCert != "" && cfg.Server.TLSKey != "" {
+		log.Printf("HTTPS 模式启用, 证书: %s", cfg.Server.TLSCert)
+		return r.RunTLS(addr, cfg.Server.TLSCert, cfg.Server.TLSKey)
+	}
+	return r.Run(addr)
 }
