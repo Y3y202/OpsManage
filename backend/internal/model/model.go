@@ -1,0 +1,113 @@
+package model
+
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
+
+type User struct {
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	Username  string         `gorm:"uniqueIndex;size:64;not null" json:"username"`
+	Password  string         `gorm:"size:128;not null" json:"-"`
+	Nickname  string         `gorm:"size:64" json:"nickname"`
+	Email     string         `gorm:"size:128" json:"email"`
+	Role      string         `gorm:"size:32;default:admin" json:"role"`
+	LastLogin time.Time      `json:"last_login"`
+	IP        string         `gorm:"size:64" json:"ip"`
+}
+
+type Website struct {
+	ID          uint           `gorm:"primarykey" json:"id"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+	Name        string         `gorm:"size:128;not null" json:"name"`
+	Domain      string         `gorm:"size:256;not null" json:"domain"`
+	Path        string         `gorm:"size:512;not null" json:"path"`
+	Port        int            `gorm:"default:80" json:"port"`
+	Status      string         `gorm:"size:16;default:running" json:"status"`
+	SSLEnabled  bool           `gorm:"default:false" json:"ssl_enabled"`
+	SSLCertPath string         `gorm:"size:512" json:"ssl_cert_path"`
+	SSLKeyPath  string         `gorm:"size:512" json:"ssl_key_path"`
+	WAFEnabled  bool           `gorm:"default:false" json:"waf_enabled"`
+	WAFRules    string         `gorm:"type:text" json:"waf_rules"`
+	NginxConf   string         `gorm:"type:text" json:"nginx_conf"`
+	Remark      string         `gorm:"size:256" json:"remark"`
+}
+
+type Database struct {
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	Name      string         `gorm:"size:128;not null" json:"name"`
+	Type      string         `gorm:"size:32;not null" json:"type"`
+	Host      string         `gorm:"size:128;default:127.0.0.1" json:"host"`
+	Port      int            `json:"port"`
+	Username  string         `gorm:"size:64" json:"username"`
+	Password  string         `gorm:"size:128" json:"-"`
+	Status    string         `gorm:"size:16;default:running" json:"status"`
+	Version   string         `gorm:"size:32" json:"version"`
+}
+
+type Container struct {
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	Name      string         `gorm:"size:128;not null" json:"name"`
+	Image     string         `gorm:"size:256;not null" json:"image"`
+	Status    string         `gorm:"size:32;default:stopped" json:"status"`
+	Ports     string         `gorm:"size:256" json:"ports"`
+	Volumes   string         `gorm:"type:text" json:"volumes"`
+	Env       string         `gorm:"type:text" json:"env"`
+	NetworkID string         `gorm:"size:128" json:"network_id"`
+	ContainerID string       `gorm:"size:128" json:"container_id"`
+}
+
+type Task struct {
+	ID         uint           `gorm:"primarykey" json:"id"`
+	CreatedAt  time.Time      `json:"created_at"`
+	UpdatedAt  time.Time      `json:"updated_at"`
+	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
+	Name       string         `gorm:"size:128;not null" json:"name"`
+	Command    string         `gorm:"type:text;not null" json:"command"`
+	CronExpr   string         `gorm:"size:64" json:"cron_expr"`
+	Status     string         `gorm:"size:16;default:enabled" json:"status"`
+	LastRun    time.Time      `json:"last_run"`
+	LastResult string         `gorm:"size:16" json:"last_result"`
+	LastOutput string         `gorm:"type:text" json:"last_output"`
+	NextRun    time.Time      `json:"next_run"`
+}
+
+type SecurityRule struct {
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	Name      string         `gorm:"size:128;not null" json:"name"`
+	Type      string         `gorm:"size:32;not null" json:"type"`
+	Content   string         `gorm:"type:text" json:"content"`
+	Status    string         `gorm:"size:16;default:enabled" json:"status"`
+	Priority  int            `gorm:"default:0" json:"priority"`
+	Remark    string         `gorm:"size:256" json:"remark"`
+}
+
+type LogEntry struct {
+	ID        uint      `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time `gorm:"index" json:"created_at"`
+	Level     string    `gorm:"size:16;not null" json:"level"`
+	Source    string    `gorm:"size:64;not null" json:"source"`
+	Message   string    `gorm:"type:text" json:"message"`
+	Detail    string    `gorm:"type:text" json:"detail"`
+}
+
+type Setting struct {
+	ID    uint   `gorm:"primarykey" json:"id"`
+	Key   string `gorm:"uniqueIndex;size:128;not null" json:"key"`
+	Value string `gorm:"type:text" json:"value"`
+}

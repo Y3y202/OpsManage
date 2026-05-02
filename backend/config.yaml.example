@@ -1,0 +1,15 @@
+server:
+  host: "0.0.0.0"
+  port: 9090
+  mode: debug
+
+database:
+  path: "./data/opsmanage.db"
+
+jwt:
+  secret: "change-me-to-a-random-string"
+  expire_hours: 168
+
+panel:
+  title: "OpsManage"
+  version: "1.0.0"

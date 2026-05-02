@@ -1,0 +1,163 @@
+package router
+
+import (
+	"os"
+	"opsmanage/internal/config"
+	"opsmanage/internal/handler"
+	"opsmanage/internal/middleware"
+
+	"github.com/gin-gonic/gin"
+)
+
+func Run(cfg *config.Config) error {
+	if cfg.Server.Mode == "release" {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	r := gin.Default()
+
+	r.Use(middleware.CORS())
+	r.Use(gin.Recovery())
+
+	r.Static("/static", "./static")
+	r.StaticFile("/favicon.ico", "./static/favicon.ico")
+	r.GET("/", func(c *gin.Context) {
+		c.File("./static/index.html")
+	})
+
+	api := r.Group("/api")
+	{
+		auth := api.Group("/auth")
+		{
+			auth.POST("/login", handler.Login)
+			auth.POST("/register", handler.Register)
+			auth.POST("/logout", handler.Logout)
+			auth.GET("/captcha", handler.Captcha)
+		}
+
+		secure := api.Group("")
+		secure.Use(middleware.JWTAuth())
+		{
+			secure.GET("/profile", handler.GetProfile)
+			secure.PUT("/password", handler.ChangePassword)
+
+			dashboard := secure.Group("/dashboard")
+			{
+				dashboard.GET("", handler.GetDashboard)
+				dashboard.GET("/system-info", handler.GetSystemInfo)
+				dashboard.GET("/system-status", handler.GetSystemStatus)
+			}
+
+			site := secure.Group("/websites")
+			{
+				site.GET("", handler.ListWebsites)
+				site.POST("", handler.CreateWebsite)
+				site.GET("/:id", handler.GetWebsite)
+				site.PUT("/:id", handler.UpdateWebsite)
+				site.DELETE("/:id", handler.DeleteWebsite)
+				site.POST("/:id/start", handler.StartWebsite)
+				site.POST("/:id/stop", handler.StopWebsite)
+			}
+
+			db := secure.Group("/databases")
+			{
+				db.GET("", handler.ListDatabases)
+				db.POST("", handler.CreateDatabase)
+				db.GET("/:id", handler.GetDatabase)
+				db.PUT("/:id", handler.UpdateDatabase)
+				db.DELETE("/:id", handler.DeleteDatabase)
+				db.POST("/:id/start", handler.StartDatabase)
+				db.POST("/:id/stop", handler.StopDatabase)
+			}
+
+			container := secure.Group("/containers")
+			{
+				container.GET("", handler.ListContainers)
+				container.POST("", handler.CreateContainer)
+				container.GET("/:id", handler.GetContainer)
+				container.DELETE("/:id", handler.DeleteContainer)
+				container.POST("/:id/start", handler.StartContainer)
+				container.POST("/:id/stop", handler.StopContainer)
+				container.POST("/:id/restart", handler.RestartContainer)
+				container.GET("/:id/logs", handler.GetContainerLogs)
+				container.GET("/images", handler.ListImages)
+				container.POST("/images/pull", handler.PullImage)
+			}
+
+			files := secure.Group("/files")
+			{
+				files.GET("/list", handler.ListFiles)
+				files.GET("/read", handler.ReadFile)
+				files.POST("/save", handler.SaveFile)
+				files.GET("/download", handler.DownloadFile)
+				files.POST("/upload", handler.UploadFile)
+				files.POST("/rename", handler.RenameFile)
+				files.DELETE("", handler.DeleteFile)
+				files.POST("/mkdir", handler.Mkdir)
+				files.POST("/copy", handler.CopyFile)
+			}
+
+			security := secure.Group("/security")
+			{
+				security.GET("/rules", handler.ListSecurityRules)
+				security.POST("/rules", handler.CreateSecurityRule)
+				security.GET("/rules/:id", handler.GetSecurityRule)
+				security.PUT("/rules/:id", handler.UpdateSecurityRule)
+				security.DELETE("/rules/:id", handler.DeleteSecurityRule)
+				security.POST("/rules/:id/toggle", handler.ToggleSecurityRule)
+			}
+
+			tasks := secure.Group("/tasks")
+			{
+				tasks.GET("", handler.ListTasks)
+				tasks.POST("", handler.CreateTask)
+				tasks.GET("/:id", handler.GetTask)
+				tasks.PUT("/:id", handler.UpdateTask)
+				tasks.DELETE("/:id", handler.DeleteTask)
+				tasks.POST("/:id/run", handler.RunTask)
+				tasks.POST("/:id/toggle", handler.ToggleTask)
+			}
+
+			logs := secure.Group("/logs")
+			{
+				logs.GET("", handler.ListLogs)
+				logs.GET("/sources", handler.GetLogSources)
+				logs.DELETE("/clear", handler.ClearLogs)
+				logs.GET("/system", handler.GetSystemLogs)
+			}
+
+			settings := secure.Group("/settings")
+			{
+				settings.GET("", handler.GetSettings)
+				settings.PUT("", handler.UpdateSettings)
+				settings.GET("/:key", handler.GetSettingByKey)
+			}
+		}
+	}
+
+	r.GET("/ws", handler.WSFileHandler)
+
+	r.NoRoute(func(c *gin.Context) {
+		if _, err := os.Stat("./static" + c.Request.URL.Path); err == nil {
+			c.File("./static" + c.Request.URL.Path)
+		} else {
+			c.File("./static/index.html")
+		}
+	})
+
+	return r.Run(cfg.Server.Host + ":" + itoa(cfg.Server.Port))
+}
+
+func itoa(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	var b [20]byte
+	n := len(b)
+	for i > 0 {
+		n--
+		b[n] = byte('0' + i%10)
+		i /= 10
+	}
+	return string(b[n:])
+}

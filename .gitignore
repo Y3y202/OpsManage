@@ -1,0 +1,27 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Backend
+backend/data/
+backend/opsmanage
+backend/opsmanage.exe
+backend/*.exe
+backend/static/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+
+# Config (use config.yaml.example as template)
+backend/config.yaml
+
+# Claude Code
+.claude/
