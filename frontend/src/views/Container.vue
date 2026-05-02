@@ -14,10 +14,13 @@ const form = reactive({ name: '', image: '', ports: '', volumes: '', env: '' })
 
 async function fetchData() {
   loading.value = true
-  const res = await getContainers({ page: page.value, page_size: 20 })
-  list.value = res.data.list
-  total.value = res.data.total
-  loading.value = false
+  try {
+    const res = await getContainers({ page: page.value, page_size: 20 })
+    list.value = res.data.list
+    total.value = res.data.total
+  } finally {
+    loading.value = false
+  }
 }
 
 function openDialog() {

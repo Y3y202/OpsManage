@@ -2,6 +2,7 @@ package router
 
 import (
 	"log"
+	"net/http"
 	"os"
 	"opsmanage/internal/config"
 	"opsmanage/internal/handler"
@@ -12,7 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func Run(cfg *config.Config) error {
+func NewServer(cfg *config.Config) *http.Server {
 	if cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -161,9 +162,14 @@ func Run(cfg *config.Config) error {
 	})
 
 	addr := cfg.Server.Host + ":" + strconv.Itoa(cfg.Server.Port)
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: r,
+	}
 	if cfg.Server.TLSCert != "" && cfg.Server.TLSKey != "" {
 		log.Printf("HTTPS 模式启用, 证书: %s", cfg.Server.TLSCert)
-		return r.RunTLS(addr, cfg.Server.TLSCert, cfg.Server.TLSKey)
+		srv.TLSConfig = nil // Gin handles TLS via ListenAndServeTLS
+		// We'll call srv.ListenAndServeTLS in main
 	}
-	return r.Run(addr)
+	return srv
 }

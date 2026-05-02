@@ -34,6 +34,9 @@ router.beforeEach((to) => {
   if (to.name !== 'Login' && !token) {
     return { name: 'Login' }
   }
+  if (to.name === 'Login' && token) {
+    return { name: 'Dashboard' }
+  }
 })
 
 export default router

@@ -22,8 +22,9 @@ async function fetchData() {
     files.value = res.data.files || []
   } catch {
     files.value = []
+  } finally {
+    loading.value = false
   }
-  loading.value = false
 }
 
 function navigateTo(path: string) {

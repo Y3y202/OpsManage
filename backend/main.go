@@ -1,7 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
 	"opsmanage/internal/config"
 	"opsmanage/internal/middleware"
 	"opsmanage/internal/router"
@@ -20,8 +27,30 @@ func main() {
 	scheduler.Init()
 	middleware.StartBlacklistCleanup()
 
-	log.Printf("🚀 OpsManage 启动中，监听 %s:%d", cfg.Server.Host, cfg.Server.Port)
-	if err := router.Run(cfg); err != nil {
-		log.Fatalf("服务启动失败: %v", err)
+	srv := router.NewServer(cfg)
+
+	go func() {
+		log.Printf("🚀 OpsManage 启动中，监听 %s", srv.Addr)
+		var err error
+		if cfg.Server.TLSCert != "" && cfg.Server.TLSKey != "" {
+			err = srv.ListenAndServeTLS(cfg.Server.TLSCert, cfg.Server.TLSKey)
+		} else {
+			err = srv.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
+			log.Fatalf("服务启动失败: %v", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("正在关闭服务...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("服务关闭失败: %v", err)
 	}
+	log.Println("服务已安全退出")
 }

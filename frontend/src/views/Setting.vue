@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { getSettings, updateSettings } from '@/api/setting'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const settings = ref<Record<string, string>>({})
 const loading = ref(false)
 
 async function fetchData() {
   loading.value = true
-  const res = await getSettings()
-  settings.value = res.data || {}
-  loading.value = false
+  try {
+    const res = await getSettings()
+    settings.value = res.data || {}
+  } finally {
+    loading.value = false
+  }
 }
 
 async function handleSave() {
@@ -19,10 +22,17 @@ async function handleSave() {
   fetchData()
 }
 
-function addSetting() {
-  const key = prompt('请输入设置项名称:')
-  if (key) {
-    settings.value[key] = ''
+async function addSetting() {
+  try {
+    const { value } = await ElMessageBox.prompt('请输入设置项名称', '添加设置', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      inputPattern: /.+/,
+      inputErrorMessage: '名称不能为空'
+    })
+    settings.value[value] = ''
+  } catch {
+    // cancelled
   }
 }
 

@@ -25,10 +25,13 @@ function onTypeChange(val: string) {
 
 async function fetchData() {
   loading.value = true
-  const res = await getDatabases({ page: page.value, page_size: 20 })
-  list.value = res.data.list
-  total.value = res.data.total
-  loading.value = false
+  try {
+    const res = await getDatabases({ page: page.value, page_size: 20 })
+    list.value = res.data.list
+    total.value = res.data.total
+  } finally {
+    loading.value = false
+  }
 }
 
 function openDialog(row?: any) {

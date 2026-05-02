@@ -90,7 +90,7 @@ func getLoadAvg() map[string]float64 {
 	if runtime.GOOS == "windows" {
 		return map[string]float64{"1m": 0, "5m": 0, "15m": 0}
 	}
-	out, err := exec.Command("cat", "/proc/loadavg").Output()
+	out, err := os.ReadFile("/proc/loadavg")
 	if err != nil {
 		return map[string]float64{"1m": 0, "5m": 0, "15m": 0}
 	}
@@ -105,18 +105,18 @@ func getLoadAvg() map[string]float64 {
 	return map[string]float64{"1m": load1, "5m": load5, "15m": load15}
 }
 
-func getMemInfo() map[string]interface{} {
+func getMemInfo() map[string]any {
 	if runtime.GOOS == "windows" {
-		return map[string]interface{}{
+		return map[string]any{
 			"total":     0,
 			"used":      0,
 			"free":      0,
 			"used_percent": 0,
 		}
 	}
-	out, err := exec.Command("cat", "/proc/meminfo").Output()
+	out, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
-		return map[string]interface{}{"total": 0, "used": 0, "free": 0, "used_percent": 0}
+		return map[string]any{"total": 0, "used": 0, "free": 0, "used_percent": 0}
 	}
 	var total, available int64
 	lines := strings.Split(string(out), "\n")
@@ -135,7 +135,7 @@ func getMemInfo() map[string]interface{} {
 	if totalMB > 0 {
 		usedPercent = float64(usedMB) / float64(totalMB) * 100
 	}
-	return map[string]interface{}{
+	return map[string]any{
 		"total":         totalMB,
 		"used":          usedMB,
 		"free":          freeMB,
@@ -143,9 +143,9 @@ func getMemInfo() map[string]interface{} {
 	}
 }
 
-func getDiskInfo() map[string]interface{} {
+func getDiskInfo() map[string]any {
 	if runtime.GOOS == "windows" {
-		return map[string]interface{}{
+		return map[string]any{
 			"total":        0,
 			"used":         0,
 			"free":         0,
@@ -154,15 +154,15 @@ func getDiskInfo() map[string]interface{} {
 	}
 	out, err := exec.Command("df", "-B1", "/").Output()
 	if err != nil {
-		return map[string]interface{}{"total": 0, "used": 0, "free": 0, "used_percent": 0}
+		return map[string]any{"total": 0, "used": 0, "free": 0, "used_percent": 0}
 	}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	if len(lines) < 2 {
-		return map[string]interface{}{"total": 0, "used": 0, "free": 0, "used_percent": 0}
+		return map[string]any{"total": 0, "used": 0, "free": 0, "used_percent": 0}
 	}
 	parts := strings.Fields(lines[1])
 	if len(parts) < 5 {
-		return map[string]interface{}{"total": 0, "used": 0, "free": 0, "used_percent": 0}
+		return map[string]any{"total": 0, "used": 0, "free": 0, "used_percent": 0}
 	}
 	var total, used, free int64
 	var usedPercent float64
@@ -170,7 +170,7 @@ func getDiskInfo() map[string]interface{} {
 	fmt.Sscanf(parts[2], "%d", &used)
 	fmt.Sscanf(parts[3], "%d", &free)
 	fmt.Sscanf(strings.TrimSuffix(parts[4], "%"), "%f", &usedPercent)
-	return map[string]interface{}{
+	return map[string]any{
 		"total":        total / (1024 * 1024),
 		"used":         used / (1024 * 1024),
 		"free":         free / (1024 * 1024),

@@ -13,10 +13,13 @@ const form = reactive({ name: '', domain: '', path: '', port: 80, remark: '', wa
 
 async function fetchData() {
   loading.value = true
-  const res = await getWebsites({ page: page.value, page_size: 20 })
-  list.value = res.data.list
-  total.value = res.data.total
-  loading.value = false
+  try {
+    const res = await getWebsites({ page: page.value, page_size: 20 })
+    list.value = res.data.list
+    total.value = res.data.total
+  } finally {
+    loading.value = false
+  }
 }
 
 function openDialog(row?: any) {

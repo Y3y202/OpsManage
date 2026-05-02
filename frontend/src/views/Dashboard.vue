@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { getDashboard, getSystemInfo, getSystemStatus } from '@/api/dashboard'
 
 const dashboard = ref<any>({})
 const sysInfo = ref<any>({})
 const sysStatus = ref<any>({})
+let timer: ReturnType<typeof setInterval> | null = null
 
-onMounted(async () => {
+async function fetchData() {
   const [d, i, s] = await Promise.all([
     getDashboard(),
     getSystemInfo(),
@@ -15,6 +16,22 @@ onMounted(async () => {
   dashboard.value = d.data
   sysInfo.value = i.data
   sysStatus.value = s.data
+}
+
+async function refreshStatus() {
+  try {
+    const s = await getSystemStatus()
+    sysStatus.value = s.data
+  } catch { /* ignore */ }
+}
+
+onMounted(async () => {
+  await fetchData()
+  timer = setInterval(refreshStatus, 10000)
+})
+
+onUnmounted(() => {
+  if (timer) clearInterval(timer)
 })
 
 function formatMB(mb: number) {

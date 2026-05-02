@@ -205,9 +205,12 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
+	// Limit upload to 50MB
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 50<<20)
+
 	file, err := c.FormFile("file")
 	if err != nil {
-		fail(c, 400, "获取上传文件失败")
+		fail(c, 400, "获取上传文件失败（文件大小不能超过 50MB）")
 		return
 	}
 
