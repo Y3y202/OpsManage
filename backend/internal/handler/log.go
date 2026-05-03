@@ -7,6 +7,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ListLogs 获取操作日志
+// @Summary 获取操作日志列表（分页、可筛选）
+// @Tags 日志管理
+// @Produce json
+// @Security BearerAuth
+// @Param page query int false "页码" default(1)
+// @Param page_size query int false "每页数量" default(20)
+// @Param level query string false "日志级别 (info/warn/error)"
+// @Param source query string false "日志来源"
+// @Param keyword query string false "关键词搜索"
+// @Success 200 {object} map[string]interface{}
+// @Router /logs [get]
 func ListLogs(c *gin.Context) {
 	var logs []model.LogEntry
 	var total int64
@@ -27,12 +39,28 @@ func ListLogs(c *gin.Context) {
 	pageResult(c, logs, total)
 }
 
+// GetLogSources 获取日志来源列表
+// @Summary 获取所有日志来源
+// @Tags 日志管理
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /logs/sources [get]
 func GetLogSources(c *gin.Context) {
 	var sources []string
 	config.DB.Model(&model.LogEntry{}).Distinct().Pluck("source", &sources)
 	success(c, sources)
 }
 
+// ClearLogs 清空日志
+// @Summary 清空操作日志
+// @Description 按来源清空或清空全部
+// @Tags 日志管理
+// @Produce json
+// @Security BearerAuth
+// @Param source query string false "日志来源（为空则清空全部）"
+// @Success 200 {object} map[string]interface{}
+// @Router /logs/clear [delete]
 func ClearLogs(c *gin.Context) {
 	source := c.Query("source")
 	if source != "" {
@@ -43,6 +71,16 @@ func ClearLogs(c *gin.Context) {
 	success(c, nil)
 }
 
+// GetSystemLogs 获取系统日志
+// @Summary 获取系统日志文件内容
+// @Description 支持 syslog, auth, nginx, nginx_error
+// @Tags 日志管理
+// @Produce json
+// @Security BearerAuth
+// @Param type query string false "日志类型" Enums(syslog, auth, nginx, nginx_error) default(syslog)
+// @Param lines query int false "行数" default(200)
+// @Success 200 {object} map[string]interface{}
+// @Router /logs/system [get]
 func GetSystemLogs(c *gin.Context) {
 	logType := c.DefaultQuery("type", "syslog")
 	lines := c.DefaultQuery("lines", "200")

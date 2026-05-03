@@ -15,6 +15,16 @@ import (
 	"opsmanage/internal/scheduler"
 )
 
+// @title           OpsManage API
+// @version         1.0.0
+// @description     轻量级服务器运维管理面板 API，提供网站管理、数据库管理、Docker 容器管理、文件管理、计划任务、安全管理等功能。
+// @host            localhost:9090
+// @BasePath        /api
+// @securityDefinitions.apikey BearerAuth
+// @in              header
+// @name            Authorization
+// @description     JWT Bearer Token，格式: Bearer {token}
+
 func main() {
 	cfg := config.Load()
 

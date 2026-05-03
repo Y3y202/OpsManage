@@ -55,6 +55,14 @@ type FileInfo struct {
 	Mode    string `json:"mode"`
 }
 
+// ListFiles 列出目录文件
+// @Summary 列出目录文件
+// @Tags 文件管理
+// @Produce json
+// @Security BearerAuth
+// @Param path query string true "目录路径"
+// @Success 200 {object} map[string]interface{}
+// @Router /files/list [get]
 func ListFiles(c *gin.Context) {
 	dirPath := c.DefaultQuery("path", "/")
 	dirPath, err := validatePath(dirPath)
@@ -101,6 +109,14 @@ func ListFiles(c *gin.Context) {
 	})
 }
 
+// ReadFile 读取文件内容
+// @Summary 读取文件内容（最大10MB）
+// @Tags 文件管理
+// @Produce json
+// @Security BearerAuth
+// @Param path query string true "文件路径"
+// @Success 200 {object} map[string]interface{}
+// @Router /files/read [get]
 func ReadFile(c *gin.Context) {
 	filePath := c.Query("path")
 	if filePath == "" {
@@ -145,6 +161,15 @@ func ReadFile(c *gin.Context) {
 	})
 }
 
+// SaveFile 保存文件内容
+// @Summary 保存文件内容
+// @Tags 文件管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body object true "文件信息"
+// @Success 200 {object} map[string]interface{}
+// @Router /files/save [post]
 func SaveFile(c *gin.Context) {
 	var req struct {
 		Path    string `json:"path" binding:"required"`
@@ -167,6 +192,13 @@ func SaveFile(c *gin.Context) {
 	success(c, nil)
 }
 
+// DownloadFile 下载文件
+// @Summary 下载文件
+// @Tags 文件管理
+// @Security BearerAuth
+// @Param path query string true "文件路径"
+// @Success 200 {string} binary
+// @Router /files/download [get]
 func DownloadFile(c *gin.Context) {
 	filePath := c.Query("path")
 	if filePath == "" {
@@ -194,6 +226,16 @@ func DownloadFile(c *gin.Context) {
 	c.File(filePath)
 }
 
+// UploadFile 上传文件
+// @Summary 上传文件（最大50MB）
+// @Tags 文件管理
+// @Accept multipart/form-data
+// @Produce json
+// @Security BearerAuth
+// @Param dir formData string false "目标目录" default(/tmp)
+// @Param file formData file true "上传文件"
+// @Success 200 {object} map[string]interface{}
+// @Router /files/upload [post]
 func UploadFile(c *gin.Context) {
 	dir := c.PostForm("dir")
 	if dir == "" {
@@ -228,6 +270,15 @@ func UploadFile(c *gin.Context) {
 	success(c, gin.H{"path": dest})
 }
 
+// RenameFile 重命名/移动文件
+// @Summary 重命名或移动文件
+// @Tags 文件管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body object true "路径信息"
+// @Success 200 {object} map[string]interface{}
+// @Router /files/rename [post]
 func RenameFile(c *gin.Context) {
 	var req struct {
 		OldPath string `json:"old_path" binding:"required"`
@@ -254,6 +305,14 @@ func RenameFile(c *gin.Context) {
 	success(c, nil)
 }
 
+// DeleteFile 删除文件或目录
+// @Summary 删除文件或目录
+// @Tags 文件管理
+// @Produce json
+// @Security BearerAuth
+// @Param path query string true "文件路径"
+// @Success 200 {object} map[string]interface{}
+// @Router /files [delete]
 func DeleteFile(c *gin.Context) {
 	filePath := c.Query("path")
 	if filePath == "" {
@@ -272,6 +331,15 @@ func DeleteFile(c *gin.Context) {
 	success(c, nil)
 }
 
+// Mkdir 创建目录
+// @Summary 创建目录
+// @Tags 文件管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body object true "目录路径"
+// @Success 200 {object} map[string]interface{}
+// @Router /files/mkdir [post]
 func Mkdir(c *gin.Context) {
 	var req struct {
 		Path string `json:"path" binding:"required"`
@@ -292,6 +360,15 @@ func Mkdir(c *gin.Context) {
 	success(c, nil)
 }
 
+// CopyFile 复制文件
+// @Summary 复制文件
+// @Tags 文件管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body object true "源路径和目标路径"
+// @Success 200 {object} map[string]interface{}
+// @Router /files/copy [post]
 func CopyFile(c *gin.Context) {
 	var req struct {
 		Src string `json:"src" binding:"required"`
@@ -335,12 +412,13 @@ func CopyFile(c *gin.Context) {
 		fail(c, 500, "创建目标文件失败")
 		return
 	}
-	defer dstFile.Close()
 
 	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		dstFile.Close()
 		fail(c, 500, "复制失败")
 		return
 	}
+	dstFile.Close()
 	success(c, nil)
 }
 

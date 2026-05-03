@@ -34,6 +34,15 @@ type LoginReq struct {
 	CaptchaCode string `json:"captcha_code" binding:"required"`
 }
 
+// Login 用户登录
+// @Summary 用户登录
+// @Description 用户名密码 + 验证码登录，返回 JWT Token
+// @Tags 认证
+// @Accept json
+// @Produce json
+// @Param body body LoginReq true "登录信息"
+// @Success 200 {object} map[string]interface{} "{"code":200,"msg":"操作成功","data":{"token":"...","user":{...}}}"
+// @Router /auth/login [post]
 func Login(c *gin.Context) {
 	var req LoginReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -92,6 +101,17 @@ type RegisterReq struct {
 	Role     string `json:"role"`
 }
 
+// Register 注册用户
+// @Summary 注册新用户（仅管理员）
+// @Description 创建新用户账号，需要管理员权限
+// @Tags 认证
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body RegisterReq true "注册信息"
+// @Success 200 {object} map[string]interface{} "{"code":200,"data":{"id":1}}"
+// @Failure 400 {object} map[string]interface{}
+// @Router /auth/register [post]
 func Register(c *gin.Context) {
 	var req RegisterReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -129,6 +149,13 @@ func Register(c *gin.Context) {
 	success(c, gin.H{"id": user.ID})
 }
 
+// ListUsers 获取用户列表
+// @Summary 获取用户列表（仅管理员）
+// @Tags 用户管理
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /users [get]
 func ListUsers(c *gin.Context) {
 	var users []model.User
 	config.DB.Order("id desc").Find(&users)
@@ -148,6 +175,14 @@ func ListUsers(c *gin.Context) {
 	success(c, result)
 }
 
+// DeleteUser 删除用户
+// @Summary 删除用户（仅管理员）
+// @Tags 用户管理
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "用户ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /users/{id} [delete]
 func DeleteUser(c *gin.Context) {
 	id := c.Param("id")
 	uid, _ := c.Get("user_id")
@@ -170,6 +205,14 @@ func DeleteUser(c *gin.Context) {
 	success(c, nil)
 }
 
+// Logout 用户登出
+// @Summary 用户登出
+// @Description 将当前 Token 加入黑名单
+// @Tags 认证
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /auth/logout [post]
 func Logout(c *gin.Context) {
 	auth := c.GetHeader("Authorization")
 	if auth != "" {
@@ -179,21 +222,37 @@ func Logout(c *gin.Context) {
 		}
 	}
 	username, _ := c.Get("username")
-	addLog("info", "auth", "用户 "+username.(string)+" 已登出")
+	if name, ok := username.(string); ok && name != "" {
+		addLog("info", "auth", "用户 "+name+" 已登出")
+	}
 	success(c, nil)
 }
 
+// Captcha 获取验证码
+// @Summary 获取验证码图片
+// @Description 生成验证码图片（base64）和验证码ID
+// @Tags 认证
+// @Produce json
+// @Success 200 {object} map[string]interface{} "{"code":200,"data":{"captcha_id":"...","captcha":"data:image/png;base64,..."}}"
+// @Router /auth/captcha [get]
 func Captcha(c *gin.Context) {
 	id := captcha.NewLen(4)
 	var buf bytes.Buffer
 	captcha.WriteImage(&buf, id, 200, 80)
 	imgBase64 := "data:image/png;base64," + base64Encode(buf.Bytes())
-	c.JSON(200, gin.H{
+	success(c, gin.H{
 		"captcha_id": id,
 		"captcha":    imgBase64,
 	})
 }
 
+// GetProfile 获取当前用户信息
+// @Summary 获取当前登录用户信息
+// @Tags 用户管理
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /profile [get]
 func GetProfile(c *gin.Context) {
 	uid, _ := c.Get("user_id")
 	var user model.User
@@ -217,6 +276,15 @@ type ChangePasswordReq struct {
 	NewPassword string `json:"new_password" binding:"required"`
 }
 
+// ChangePassword 修改密码
+// @Summary 修改当前用户密码
+// @Tags 用户管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body ChangePasswordReq true "密码信息"
+// @Success 200 {object} map[string]interface{}
+// @Router /password [put]
 func ChangePassword(c *gin.Context) {
 	uid, _ := c.Get("user_id")
 	var req ChangePasswordReq

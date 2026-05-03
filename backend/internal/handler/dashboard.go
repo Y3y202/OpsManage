@@ -13,6 +13,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// GetDashboard 获取仪表盘概览
+// @Summary 获取仪表盘概览数据
+// @Description 返回网站数、数据库数、容器数等统计信息
+// @Tags 仪表盘
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /dashboard [get]
 func GetDashboard(c *gin.Context) {
 	var siteCount, dbCount, containerCount int64
 	config.DB.Model(&model.Website{}).Count(&siteCount)
@@ -28,6 +36,14 @@ func GetDashboard(c *gin.Context) {
 	})
 }
 
+// GetSystemInfo 获取系统信息
+// @Summary 获取服务器系统信息
+// @Description 返回操作系统、架构、CPU 核心数、主机名、运行时间、内核版本
+// @Tags 仪表盘
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /dashboard/system-info [get]
 func GetSystemInfo(c *gin.Context) {
 	info := gin.H{
 		"os":        runtime.GOOS,
@@ -41,6 +57,13 @@ func GetSystemInfo(c *gin.Context) {
 	success(c, info)
 }
 
+// GetSystemStatus 获取系统实时状态
+// @Summary 获取 CPU、内存、磁盘实时状态
+// @Tags 仪表盘
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /dashboard/system-status [get]
 func GetSystemStatus(c *gin.Context) {
 	loadAvg := getLoadAvg()
 	memInfo := getMemInfo()
@@ -77,7 +100,7 @@ func getUptime() string {
 
 func getKernelVersion() string {
 	if runtime.GOOS == "windows" {
-		return fmt.Sprintf("Windows %s", runtime.GOOS)
+		return fmt.Sprintf("Windows %s", runtime.GOARCH)
 	}
 	out, err := exec.Command("uname", "-r").Output()
 	if err != nil {

@@ -7,6 +7,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ListDatabases 获取数据库列表
+// @Summary 获取数据库实例列表（分页）
+// @Tags 数据库管理
+// @Produce json
+// @Security BearerAuth
+// @Param page query int false "页码" default(1)
+// @Param page_size query int false "每页数量" default(20)
+// @Success 200 {object} map[string]interface{}
+// @Router /databases [get]
 func ListDatabases(c *gin.Context) {
 	var dbs []model.Database
 	var total int64
@@ -26,6 +35,16 @@ type CreateDatabaseReq struct {
 	Version  string `json:"version"`
 }
 
+// CreateDatabase 创建数据库实例
+// @Summary 创建数据库实例
+// @Description 支持 MySQL、PostgreSQL、Redis 三种类型
+// @Tags 数据库管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body CreateDatabaseReq true "数据库信息"
+// @Success 200 {object} map[string]interface{}
+// @Router /databases [post]
 func CreateDatabase(c *gin.Context) {
 	var req CreateDatabaseReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -74,6 +93,14 @@ func CreateDatabase(c *gin.Context) {
 	success(c, db)
 }
 
+// GetDatabase 获取数据库详情
+// @Summary 获取数据库实例详情
+// @Tags 数据库管理
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "数据库ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /databases/{id} [get]
 func GetDatabase(c *gin.Context) {
 	id := c.Param("id")
 	var db model.Database
@@ -84,6 +111,15 @@ func GetDatabase(c *gin.Context) {
 	success(c, db)
 }
 
+// UpdateDatabase 更新数据库实例
+// @Summary 更新数据库实例配置
+// @Tags 数据库管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "数据库ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /databases/{id} [put]
 func UpdateDatabase(c *gin.Context) {
 	id := c.Param("id")
 	var db model.Database
@@ -120,6 +156,14 @@ func UpdateDatabase(c *gin.Context) {
 	success(c, db)
 }
 
+// DeleteDatabase 删除数据库实例
+// @Summary 删除数据库实例
+// @Tags 数据库管理
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "数据库ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /databases/{id} [delete]
 func DeleteDatabase(c *gin.Context) {
 	id := c.Param("id")
 	if err := config.DB.Delete(&model.Database{}, id).Error; err != nil {
@@ -129,12 +173,28 @@ func DeleteDatabase(c *gin.Context) {
 	success(c, nil)
 }
 
+// StartDatabase 启动数据库
+// @Summary 启动数据库实例
+// @Tags 数据库管理
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "数据库ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /databases/{id}/start [post]
 func StartDatabase(c *gin.Context) {
 	id := c.Param("id")
 	config.DB.Model(&model.Database{}).Where("id = ?", id).Update("status", "running")
 	success(c, gin.H{"status": "running"})
 }
 
+// StopDatabase 停止数据库
+// @Summary 停止数据库实例
+// @Tags 数据库管理
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "数据库ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /databases/{id}/stop [post]
 func StopDatabase(c *gin.Context) {
 	id := c.Param("id")
 	config.DB.Model(&model.Database{}).Where("id = ?", id).Update("status", "stopped")

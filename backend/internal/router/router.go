@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 func NewServer(cfg *config.Config) *http.Server {
@@ -32,6 +34,9 @@ func NewServer(cfg *config.Config) *http.Server {
 	r.GET("/", func(c *gin.Context) {
 		c.File("./static/index.html")
 	})
+
+	// Swagger API 文档
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	api := r.Group("/api")
 	{

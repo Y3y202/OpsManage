@@ -1,19 +1,11 @@
 package handler
 
 import (
-	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
 )
-
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return r.Header.Get("Origin") == "" || r.Header.Get("Origin") == "http://"+r.Host || r.Header.Get("Origin") == "https://"+r.Host
-	},
-}
 
 func success(c *gin.Context, data any) {
 	c.JSON(200, gin.H{"code": 200, "msg": "操作成功", "data": data})

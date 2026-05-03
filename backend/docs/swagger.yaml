@@ -1,0 +1,1562 @@
+basePath: /api
+definitions:
+  handler.ChangePasswordReq:
+    properties:
+      new_password:
+        type: string
+      old_password:
+        type: string
+    required:
+    - new_password
+    - old_password
+    type: object
+  handler.CreateContainerReq:
+    properties:
+      env:
+        type: string
+      image:
+        type: string
+      name:
+        type: string
+      ports:
+        type: string
+      volumes:
+        type: string
+    required:
+    - image
+    - name
+    type: object
+  handler.CreateDatabaseReq:
+    properties:
+      host:
+        type: string
+      name:
+        type: string
+      password:
+        type: string
+      port:
+        type: integer
+      type:
+        type: string
+      username:
+        type: string
+      version:
+        type: string
+    required:
+    - name
+    - type
+    type: object
+  handler.CreateSecurityRuleReq:
+    properties:
+      content:
+        type: string
+      name:
+        type: string
+      priority:
+        type: integer
+      remark:
+        type: string
+      type:
+        type: string
+    required:
+    - content
+    - name
+    - type
+    type: object
+  handler.CreateTaskReq:
+    properties:
+      command:
+        type: string
+      cron_expr:
+        type: string
+      name:
+        type: string
+    required:
+    - command
+    - cron_expr
+    - name
+    type: object
+  handler.CreateWebsiteReq:
+    properties:
+      domain:
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+      port:
+        type: integer
+      remark:
+        type: string
+      waf_enabled:
+        type: boolean
+      waf_rules:
+        type: string
+    required:
+    - domain
+    - name
+    - path
+    type: object
+  handler.LoginReq:
+    properties:
+      captcha_code:
+        type: string
+      captcha_id:
+        type: string
+      password:
+        type: string
+      username:
+        type: string
+    required:
+    - captcha_code
+    - captcha_id
+    - password
+    - username
+    type: object
+  handler.RegisterReq:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+      role:
+        type: string
+      username:
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  handler.UpdateWebsiteReq:
+    properties:
+      domain:
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+      port:
+        type: integer
+      remark:
+        type: string
+      ssl_cert_path:
+        type: string
+      ssl_enabled:
+        type: boolean
+      ssl_key_path:
+        type: string
+      waf_enabled:
+        type: boolean
+      waf_rules:
+        type: string
+    type: object
+host: localhost:9090
+info:
+  contact: {}
+  description: 轻量级服务器运维管理面板 API，提供网站管理、数据库管理、Docker 容器管理、文件管理、计划任务、安全管理等功能。
+  title: OpsManage API
+  version: 1.0.0
+paths:
+  /auth/captcha:
+    get:
+      description: 生成验证码图片（base64）和验证码ID
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{"code":200,"data":{"captcha_id":"...","captcha":"data:image/png;base64,..."}}'
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取验证码图片
+      tags:
+      - 认证
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: 用户名密码 + 验证码登录，返回 JWT Token
+      parameters:
+      - description: 登录信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.LoginReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{"code":200,"msg":"操作成功","data":{"token":"...","user":{...}}}'
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 用户登录
+      tags:
+      - 认证
+  /auth/logout:
+    post:
+      description: 将当前 Token 加入黑名单
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 用户登出
+      tags:
+      - 认证
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: 创建新用户账号，需要管理员权限
+      parameters:
+      - description: 注册信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RegisterReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{"code":200,"data":{"id":1}}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 注册新用户（仅管理员）
+      tags:
+      - 认证
+  /containers:
+    get:
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 Docker 容器列表（分页）
+      tags:
+      - 容器管理
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 容器信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateContainerReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建 Docker 容器
+      tags:
+      - 容器管理
+  /containers/{id}:
+    delete:
+      parameters:
+      - description: 容器ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除容器（docker rm -f）
+      tags:
+      - 容器管理
+    get:
+      parameters:
+      - description: 容器ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取容器详情
+      tags:
+      - 容器管理
+  /containers/{id}/logs:
+    get:
+      parameters:
+      - description: 容器ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取容器日志（最近100行）
+      tags:
+      - 容器管理
+  /containers/{id}/restart:
+    post:
+      parameters:
+      - description: 容器ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 重启 Docker 容器
+      tags:
+      - 容器管理
+  /containers/{id}/start:
+    post:
+      parameters:
+      - description: 容器ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 启动 Docker 容器
+      tags:
+      - 容器管理
+  /containers/{id}/stop:
+    post:
+      parameters:
+      - description: 容器ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 停止 Docker 容器
+      tags:
+      - 容器管理
+  /containers/images:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 Docker 镜像列表
+      tags:
+      - 容器管理
+  /containers/images/pull:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 镜像名
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 拉取 Docker 镜像
+      tags:
+      - 容器管理
+  /dashboard:
+    get:
+      description: 返回网站数、数据库数、容器数等统计信息
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取仪表盘概览数据
+      tags:
+      - 仪表盘
+  /dashboard/system-info:
+    get:
+      description: 返回操作系统、架构、CPU 核心数、主机名、运行时间、内核版本
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取服务器系统信息
+      tags:
+      - 仪表盘
+  /dashboard/system-status:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 CPU、内存、磁盘实时状态
+      tags:
+      - 仪表盘
+  /databases:
+    get:
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取数据库实例列表（分页）
+      tags:
+      - 数据库管理
+    post:
+      consumes:
+      - application/json
+      description: 支持 MySQL、PostgreSQL、Redis 三种类型
+      parameters:
+      - description: 数据库信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateDatabaseReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建数据库实例
+      tags:
+      - 数据库管理
+  /databases/{id}:
+    delete:
+      parameters:
+      - description: 数据库ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除数据库实例
+      tags:
+      - 数据库管理
+    get:
+      parameters:
+      - description: 数据库ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取数据库实例详情
+      tags:
+      - 数据库管理
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 数据库ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新数据库实例配置
+      tags:
+      - 数据库管理
+  /databases/{id}/start:
+    post:
+      parameters:
+      - description: 数据库ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 启动数据库实例
+      tags:
+      - 数据库管理
+  /databases/{id}/stop:
+    post:
+      parameters:
+      - description: 数据库ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 停止数据库实例
+      tags:
+      - 数据库管理
+  /files:
+    delete:
+      parameters:
+      - description: 文件路径
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除文件或目录
+      tags:
+      - 文件管理
+  /files/copy:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 源路径和目标路径
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 复制文件
+      tags:
+      - 文件管理
+  /files/download:
+    get:
+      parameters:
+      - description: 文件路径
+        in: query
+        name: path
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: 下载文件
+      tags:
+      - 文件管理
+  /files/list:
+    get:
+      parameters:
+      - description: 目录路径
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出目录文件
+      tags:
+      - 文件管理
+  /files/mkdir:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 目录路径
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建目录
+      tags:
+      - 文件管理
+  /files/read:
+    get:
+      parameters:
+      - description: 文件路径
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 读取文件内容（最大10MB）
+      tags:
+      - 文件管理
+  /files/rename:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 路径信息
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 重命名或移动文件
+      tags:
+      - 文件管理
+  /files/save:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 文件信息
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 保存文件内容
+      tags:
+      - 文件管理
+  /files/upload:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - default: /tmp
+        description: 目标目录
+        in: formData
+        name: dir
+        type: string
+      - description: 上传文件
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 上传文件（最大50MB）
+      tags:
+      - 文件管理
+  /logs:
+    get:
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      - description: 日志级别 (info/warn/error)
+        in: query
+        name: level
+        type: string
+      - description: 日志来源
+        in: query
+        name: source
+        type: string
+      - description: 关键词搜索
+        in: query
+        name: keyword
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取操作日志列表（分页、可筛选）
+      tags:
+      - 日志管理
+  /logs/clear:
+    delete:
+      description: 按来源清空或清空全部
+      parameters:
+      - description: 日志来源（为空则清空全部）
+        in: query
+        name: source
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 清空操作日志
+      tags:
+      - 日志管理
+  /logs/sources:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取所有日志来源
+      tags:
+      - 日志管理
+  /logs/system:
+    get:
+      description: 支持 syslog, auth, nginx, nginx_error
+      parameters:
+      - default: syslog
+        description: 日志类型
+        enum:
+        - syslog
+        - auth
+        - nginx
+        - nginx_error
+        in: query
+        name: type
+        type: string
+      - default: 200
+        description: 行数
+        in: query
+        name: lines
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取系统日志文件内容
+      tags:
+      - 日志管理
+  /password:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 密码信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ChangePasswordReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 修改当前用户密码
+      tags:
+      - 用户管理
+  /profile:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取当前登录用户信息
+      tags:
+      - 用户管理
+  /security/rules:
+    get:
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取安全规则列表（分页）
+      tags:
+      - 安全管理
+    post:
+      consumes:
+      - application/json
+      description: '支持类型: ip_whitelist, ip_blacklist, url_blacklist, ua_blacklist'
+      parameters:
+      - description: 规则信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateSecurityRuleReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建安全规则
+      tags:
+      - 安全管理
+  /security/rules/{id}:
+    delete:
+      parameters:
+      - description: 规则ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除安全规则
+      tags:
+      - 安全管理
+    get:
+      parameters:
+      - description: 规则ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取安全规则详情
+      tags:
+      - 安全管理
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规则ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新安全规则
+      tags:
+      - 安全管理
+  /security/rules/{id}/toggle:
+    post:
+      parameters:
+      - description: 规则ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 启用/禁用安全规则
+      tags:
+      - 安全管理
+  /settings:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取所有系统设置
+      tags:
+      - 系统设置
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 设置键值对
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties:
+            type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 批量更新系统设置
+      tags:
+      - 系统设置
+  /settings/{key}:
+    get:
+      parameters:
+      - description: 设置键名
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 根据 Key 获取设置项
+      tags:
+      - 系统设置
+  /tasks:
+    get:
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取计划任务列表（分页）
+      tags:
+      - 计划任务
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateTaskReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建计划任务
+      tags:
+      - 计划任务
+  /tasks/{id}:
+    delete:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除计划任务
+      tags:
+      - 计划任务
+    get:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取计划任务详情
+      tags:
+      - 计划任务
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新计划任务
+      tags:
+      - 计划任务
+  /tasks/{id}/run:
+    post:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 手动触发执行计划任务
+      tags:
+      - 计划任务
+  /tasks/{id}/toggle:
+    post:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 启用/禁用计划任务
+      tags:
+      - 计划任务
+  /users:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取用户列表（仅管理员）
+      tags:
+      - 用户管理
+  /users/{id}:
+    delete:
+      parameters:
+      - description: 用户ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除用户（仅管理员）
+      tags:
+      - 用户管理
+  /websites:
+    get:
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取网站列表（分页）
+      tags:
+      - 网站管理
+    post:
+      consumes:
+      - application/json
+      description: 创建网站并自动生成 Nginx 配置文件
+      parameters:
+      - description: 网站信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateWebsiteReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建网站
+      tags:
+      - 网站管理
+  /websites/{id}:
+    delete:
+      description: 删除网站并移除 Nginx 配置
+      parameters:
+      - description: 网站ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除网站
+      tags:
+      - 网站管理
+    get:
+      parameters:
+      - description: 网站ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取网站详情
+      tags:
+      - 网站管理
+    put:
+      consumes:
+      - application/json
+      description: 更新网站信息并重新生成 Nginx 配置
+      parameters:
+      - description: 网站ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateWebsiteReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新网站配置
+      tags:
+      - 网站管理
+  /websites/{id}/start:
+    post:
+      parameters:
+      - description: 网站ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 启动网站
+      tags:
+      - 网站管理
+  /websites/{id}/stop:
+    post:
+      parameters:
+      - description: 网站ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 停止网站
+      tags:
+      - 网站管理
+securityDefinitions:
+  BearerAuth:
+    description: 'JWT Bearer Token，格式: Bearer {token}'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

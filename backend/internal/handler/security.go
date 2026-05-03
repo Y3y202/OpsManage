@@ -8,6 +8,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ListSecurityRules 获取安全规则列表
+// @Summary 获取安全规则列表（分页）
+// @Tags 安全管理
+// @Produce json
+// @Security BearerAuth
+// @Param page query int false "页码" default(1)
+// @Param page_size query int false "每页数量" default(20)
+// @Success 200 {object} map[string]interface{}
+// @Router /security/rules [get]
 func ListSecurityRules(c *gin.Context) {
 	var rules []model.SecurityRule
 	var total int64
@@ -25,6 +34,16 @@ type CreateSecurityRuleReq struct {
 	Remark   string `json:"remark"`
 }
 
+// CreateSecurityRule 创建安全规则
+// @Summary 创建安全规则
+// @Description 支持类型: ip_whitelist, ip_blacklist, url_blacklist, ua_blacklist
+// @Tags 安全管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body CreateSecurityRuleReq true "规则信息"
+// @Success 200 {object} map[string]interface{}
+// @Router /security/rules [post]
 func CreateSecurityRule(c *gin.Context) {
 	var req CreateSecurityRuleReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -50,6 +69,14 @@ func CreateSecurityRule(c *gin.Context) {
 	success(c, rule)
 }
 
+// GetSecurityRule 获取安全规则详情
+// @Summary 获取安全规则详情
+// @Tags 安全管理
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "规则ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /security/rules/{id} [get]
 func GetSecurityRule(c *gin.Context) {
 	id := c.Param("id")
 	var rule model.SecurityRule
@@ -60,6 +87,15 @@ func GetSecurityRule(c *gin.Context) {
 	success(c, rule)
 }
 
+// UpdateSecurityRule 更新安全规则
+// @Summary 更新安全规则
+// @Tags 安全管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "规则ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /security/rules/{id} [put]
 func UpdateSecurityRule(c *gin.Context) {
 	id := c.Param("id")
 	var rule model.SecurityRule
@@ -93,6 +129,14 @@ func UpdateSecurityRule(c *gin.Context) {
 	success(c, rule)
 }
 
+// DeleteSecurityRule 删除安全规则
+// @Summary 删除安全规则
+// @Tags 安全管理
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "规则ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /security/rules/{id} [delete]
 func DeleteSecurityRule(c *gin.Context) {
 	id := c.Param("id")
 	if err := config.DB.Delete(&model.SecurityRule{}, id).Error; err != nil {
@@ -103,6 +147,14 @@ func DeleteSecurityRule(c *gin.Context) {
 	success(c, nil)
 }
 
+// ToggleSecurityRule 切换规则状态
+// @Summary 启用/禁用安全规则
+// @Tags 安全管理
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "规则ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /security/rules/{id}/toggle [post]
 func ToggleSecurityRule(c *gin.Context) {
 	id := c.Param("id")
 	var rule model.SecurityRule

@@ -11,6 +11,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ListTasks 获取任务列表
+// @Summary 获取计划任务列表（分页）
+// @Tags 计划任务
+// @Produce json
+// @Security BearerAuth
+// @Param page query int false "页码" default(1)
+// @Param page_size query int false "每页数量" default(20)
+// @Success 200 {object} map[string]interface{}
+// @Router /tasks [get]
 func ListTasks(c *gin.Context) {
 	var tasks []model.Task
 	var total int64
@@ -26,6 +35,15 @@ type CreateTaskReq struct {
 	CronExpr string `json:"cron_expr" binding:"required"`
 }
 
+// CreateTask 创建计划任务
+// @Summary 创建计划任务
+// @Tags 计划任务
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body CreateTaskReq true "任务信息"
+// @Success 200 {object} map[string]interface{}
+// @Router /tasks [post]
 func CreateTask(c *gin.Context) {
 	var req CreateTaskReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -49,6 +67,14 @@ func CreateTask(c *gin.Context) {
 	success(c, task)
 }
 
+// GetTask 获取任务详情
+// @Summary 获取计划任务详情
+// @Tags 计划任务
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "任务ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /tasks/{id} [get]
 func GetTask(c *gin.Context) {
 	id := c.Param("id")
 	var task model.Task
@@ -59,6 +85,15 @@ func GetTask(c *gin.Context) {
 	success(c, task)
 }
 
+// UpdateTask 更新计划任务
+// @Summary 更新计划任务
+// @Tags 计划任务
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "任务ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /tasks/{id} [put]
 func UpdateTask(c *gin.Context) {
 	id := c.Param("id")
 	var task model.Task
@@ -90,6 +125,14 @@ func UpdateTask(c *gin.Context) {
 	success(c, task)
 }
 
+// DeleteTask 删除计划任务
+// @Summary 删除计划任务
+// @Tags 计划任务
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "任务ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /tasks/{id} [delete]
 func DeleteTask(c *gin.Context) {
 	id := c.Param("id")
 	var task model.Task
@@ -102,6 +145,14 @@ func DeleteTask(c *gin.Context) {
 	success(c, nil)
 }
 
+// RunTask 手动执行任务
+// @Summary 手动触发执行计划任务
+// @Tags 计划任务
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "任务ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /tasks/{id}/run [post]
 func RunTask(c *gin.Context) {
 	id := c.Param("id")
 	var task model.Task
@@ -126,6 +177,14 @@ func RunTask(c *gin.Context) {
 	success(c, gin.H{"msg": "任务已触发执行"})
 }
 
+// ToggleTask 切换任务状态
+// @Summary 启用/禁用计划任务
+// @Tags 计划任务
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "任务ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /tasks/{id}/toggle [post]
 func ToggleTask(c *gin.Context) {
 	id := c.Param("id")
 	var task model.Task

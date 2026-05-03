@@ -58,6 +58,15 @@ const nginxConfTpl = `server {
 
 const nginxConfDir = "/etc/nginx/conf.d"
 
+// ListWebsites 获取网站列表
+// @Summary 获取网站列表（分页）
+// @Tags 网站管理
+// @Produce json
+// @Security BearerAuth
+// @Param page query int false "页码" default(1)
+// @Param page_size query int false "每页数量" default(20)
+// @Success 200 {object} map[string]interface{}
+// @Router /websites [get]
 func ListWebsites(c *gin.Context) {
 	var sites []model.Website
 	var total int64
@@ -77,6 +86,16 @@ type CreateWebsiteReq struct {
 	WAFRules   string `json:"waf_rules"`
 }
 
+// CreateWebsite 创建网站
+// @Summary 创建网站
+// @Description 创建网站并自动生成 Nginx 配置文件
+// @Tags 网站管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body CreateWebsiteReq true "网站信息"
+// @Success 200 {object} map[string]interface{}
+// @Router /websites [post]
 func CreateWebsite(c *gin.Context) {
 	var req CreateWebsiteReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -117,6 +136,14 @@ func CreateWebsite(c *gin.Context) {
 	success(c, site)
 }
 
+// GetWebsite 获取网站详情
+// @Summary 获取网站详情
+// @Tags 网站管理
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "网站ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /websites/{id} [get]
 func GetWebsite(c *gin.Context) {
 	id := c.Param("id")
 	var site model.Website
@@ -140,6 +167,17 @@ type UpdateWebsiteReq struct {
 	SSLKeyPath  string `json:"ssl_key_path"`
 }
 
+// UpdateWebsite 更新网站
+// @Summary 更新网站配置
+// @Description 更新网站信息并重新生成 Nginx 配置
+// @Tags 网站管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "网站ID"
+// @Param body body UpdateWebsiteReq true "更新信息"
+// @Success 200 {object} map[string]interface{}
+// @Router /websites/{id} [put]
 func UpdateWebsite(c *gin.Context) {
 	id := c.Param("id")
 	var site model.Website
@@ -197,6 +235,15 @@ func UpdateWebsite(c *gin.Context) {
 	success(c, site)
 }
 
+// DeleteWebsite 删除网站
+// @Summary 删除网站
+// @Description 删除网站并移除 Nginx 配置
+// @Tags 网站管理
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "网站ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /websites/{id} [delete]
 func DeleteWebsite(c *gin.Context) {
 	id := c.Param("id")
 	var site model.Website
@@ -212,6 +259,14 @@ func DeleteWebsite(c *gin.Context) {
 	success(c, nil)
 }
 
+// StartWebsite 启动网站
+// @Summary 启动网站
+// @Tags 网站管理
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "网站ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /websites/{id}/start [post]
 func StartWebsite(c *gin.Context) {
 	id := c.Param("id")
 	config.DB.Model(&model.Website{}).Where("id = ?", id).Update("status", "running")
@@ -219,6 +274,14 @@ func StartWebsite(c *gin.Context) {
 	success(c, gin.H{"status": "running"})
 }
 
+// StopWebsite 停止网站
+// @Summary 停止网站
+// @Tags 网站管理
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "网站ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /websites/{id}/stop [post]
 func StopWebsite(c *gin.Context) {
 	id := c.Param("id")
 	config.DB.Model(&model.Website{}).Where("id = ?", id).Update("status", "stopped")
