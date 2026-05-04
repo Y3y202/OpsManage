@@ -106,8 +106,59 @@ type LogEntry struct {
 	Detail    string    `gorm:"type:text" json:"detail"`
 }
 
+type SSHAccount struct {
+	ID          uint           `gorm:"primarykey" json:"id"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+	Name        string         `gorm:"size:128;not null" json:"name"`
+	Host        string         `gorm:"size:256;not null" json:"host"`
+	Port        int            `gorm:"default:22" json:"port"`
+	Username    string         `gorm:"size:64;not null" json:"username"`
+	Password    string         `gorm:"size:256" json:"-"`
+	AuthMethod  string         `gorm:"size:16;default:password" json:"auth_method"` // password / key
+	PrivateKey  string         `gorm:"type:text" json:"-"`
+	PublicKey   string         `gorm:"type:text" json:"-"`
+	Status      string         `gorm:"size:16;default:active" json:"status"`
+	Description string         `gorm:"size:512" json:"description"`
+}
+
 type Setting struct {
 	ID    uint   `gorm:"primarykey" json:"id"`
 	Key   string `gorm:"uniqueIndex;size:128;not null" json:"key"`
 	Value string `gorm:"type:text" json:"value"`
+}
+
+// DockerRegistry 镜像仓库
+type DockerRegistry struct {
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	Name      string         `gorm:"size:128;not null" json:"name"`
+	URL       string         `gorm:"size:256;not null" json:"url"`
+	Username  string         `gorm:"size:128" json:"username"`
+	Password  string         `gorm:"size:256" json:"-"`
+	IsDefault bool           `gorm:"default:false" json:"is_default"`
+}
+
+// ComposeProject 编排项目
+type ComposeProject struct {
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	Name      string         `gorm:"size:128;not null" json:"name"`
+	Path      string         `gorm:"size:512;not null" json:"path"`
+	Status    string         `gorm:"size:32;default:stopped" json:"status"`
+	Services  int            `gorm:"default:0" json:"services"`
+}
+
+// ComposeTemplate 编排模板
+type ComposeTemplate struct {
+	ID          uint           `gorm:"primarykey" json:"id"`
+	CreatedAt   time.Time      `json:"created_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+	Name        string         `gorm:"size:128;not null" json:"name"`
+	Description string         `gorm:"size:512" json:"description"`
+	Content     string         `gorm:"type:text" json:"content"`
 }

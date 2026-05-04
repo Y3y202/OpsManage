@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { getLogs, getLogSources, clearLogs, getSystemLogs } from '@/api/log'
+import { getLogs, getLogSources, clearLogs, getSystemLogs, getSSHLogs } from '@/api/log'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const activeTab = ref('app')
@@ -23,6 +23,38 @@ const sysLogTypes = [
   { label: 'Nginx访问', value: 'nginx' },
   { label: 'Nginx错误', value: 'nginx_error' }
 ]
+
+// SSH 登录日志
+const sshLogs = ref<any[]>([])
+const sshTotal = ref(0)
+const sshLoading = ref(false)
+const sshPage = ref(1)
+const sshFilterEvent = ref('')
+const sshFilterKeyword = ref('')
+
+const sshEventOptions = [
+  { label: '登录成功', value: 'accepted' },
+  { label: '登录失败', value: 'failed' },
+  { label: '连接关闭', value: 'closed' },
+  { label: '会话开启', value: 'session_open' },
+  { label: '会话关闭', value: 'session_close' }
+]
+
+function sshEventType(event: string) {
+  switch (event) {
+    case 'accepted': return 'success'
+    case 'failed': return 'danger'
+    case 'closed': return 'warning'
+    case 'session_open': return ''
+    case 'session_close': return 'info'
+    default: return 'info'
+  }
+}
+
+function sshEventLabel(event: string) {
+  const found = sshEventOptions.find(e => e.value === event)
+  return found ? found.label : event
+}
 
 async function fetchLogs() {
   loading.value = true
@@ -52,6 +84,22 @@ async function fetchSystemLogs() {
   sysLogLoading.value = false
 }
 
+async function fetchSSHLogs() {
+  sshLoading.value = true
+  try {
+    const params: any = { page: sshPage.value, page_size: 20, lines: 1000 }
+    if (sshFilterEvent.value) params.event = sshFilterEvent.value
+    if (sshFilterKeyword.value) params.keyword = sshFilterKeyword.value
+    const res = await getSSHLogs(params)
+    sshLogs.value = res.data.list
+    sshTotal.value = res.data.total
+  } catch {
+    sshLogs.value = []
+    sshTotal.value = 0
+  }
+  sshLoading.value = false
+}
+
 async function handleClear() {
   await ElMessageBox.confirm('确定清空所有日志?', '提示')
   await clearLogs(filterSource.value || undefined)
@@ -68,6 +116,7 @@ function levelType(level: string) {
 onMounted(() => {
   fetchLogs()
   fetchSources()
+  fetchSSHLogs()
 })
 </script>
 
@@ -102,6 +151,31 @@ onMounted(() => {
         </el-table>
         <el-pagination style="margin-top: 16px" v-model:current-page="page" :total="total" :page-size="20" layout="prev, pager, next" @current-change="fetchLogs" />
       </el-tab-pane>
+
+      <el-tab-pane label="SSH 登录日志" name="ssh">
+        <div style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center">
+          <el-select v-model="sshFilterEvent" placeholder="事件类型" clearable style="width: 140px" @change="sshPage=1;fetchSSHLogs()">
+            <el-option v-for="t in sshEventOptions" :key="t.value" :label="t.label" :value="t.value" />
+          </el-select>
+          <el-input v-model="sshFilterKeyword" placeholder="搜索 用户/IP" clearable style="width: 200px" @keyup.enter="sshPage=1;fetchSSHLogs()" />
+          <el-button @click="sshPage=1;fetchSSHLogs()">搜索</el-button>
+          <el-button @click="sshFilterEvent='';sshFilterKeyword='';sshPage=1;fetchSSHLogs()">重置</el-button>
+        </div>
+        <el-table :data="sshLogs" v-loading="sshLoading" stripe>
+          <el-table-column prop="time" label="时间" width="240" />
+          <el-table-column prop="event" label="事件" width="120">
+            <template #default="{ row }">
+              <el-tag :type="sshEventType(row.event)">{{ sshEventLabel(row.event) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="user" label="用户" width="100" />
+          <el-table-column prop="ip" label="IP 地址" width="160" />
+          <el-table-column prop="port" label="端口" width="80" />
+          <el-table-column prop="message" label="原始日志" show-overflow-tooltip />
+        </el-table>
+        <el-pagination style="margin-top: 16px" v-model:current-page="sshPage" :total="sshTotal" :page-size="20" layout="prev, pager, next" @current-change="fetchSSHLogs" />
+      </el-tab-pane>
+
       <el-tab-pane label="系统日志" name="system">
         <div style="margin-bottom: 16px; display: flex; gap: 8px">
           <el-select v-model="sysLogType" style="width: 160px">

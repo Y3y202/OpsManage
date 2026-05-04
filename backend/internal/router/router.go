@@ -101,9 +101,27 @@ func NewServer(cfg *config.Config) *http.Server {
 				container.POST("/:id/stop", handler.StopContainer)
 				container.POST("/:id/restart", handler.RestartContainer)
 				container.GET("/:id/logs", handler.GetContainerLogs)
-				container.GET("/images", handler.ListImages)
-				container.POST("/images/pull", handler.PullImage)
-			}
+			container.GET("/images", handler.ListImages)
+			container.POST("/images/pull", handler.PullImage)
+			container.GET("/overview", handler.GetDockerOverview)
+			container.GET("/networks", handler.ListDockerNetworks)
+			container.DELETE("/networks/:id", handler.RemoveNetwork)
+			container.GET("/volumes", handler.ListDockerVolumes)
+			container.DELETE("/volumes/:id", handler.RemoveVolume)
+			container.DELETE("/images/:id", handler.RemoveImage)
+			container.POST("/prune", handler.PruneDocker)
+			container.GET("/registries", handler.ListRegistries)
+			container.POST("/registries", handler.CreateRegistry)
+			container.DELETE("/registries/:id", handler.DeleteRegistry)
+			container.GET("/compose", handler.ListComposeProjects)
+			container.POST("/compose", handler.CreateComposeProject)
+			container.DELETE("/compose/:id", handler.DeleteComposeProject)
+			container.POST("/compose/:id/start", handler.StartComposeProject)
+			container.POST("/compose/:id/stop", handler.StopComposeProject)
+			container.GET("/templates", handler.ListComposeTemplates)
+			container.POST("/templates", handler.CreateComposeTemplate)
+			container.DELETE("/templates/:id", handler.DeleteComposeTemplate)
+		}
 
 			files := secure.Group("/files")
 			{
@@ -118,45 +136,71 @@ func NewServer(cfg *config.Config) *http.Server {
 				files.POST("/copy", handler.CopyFile)
 			}
 
-			security := secure.Group("/security")
-			{
-				security.GET("/rules", handler.ListSecurityRules)
-				security.POST("/rules", handler.CreateSecurityRule)
-				security.GET("/rules/:id", handler.GetSecurityRule)
-				security.PUT("/rules/:id", handler.UpdateSecurityRule)
-				security.DELETE("/rules/:id", handler.DeleteSecurityRule)
-				security.POST("/rules/:id/toggle", handler.ToggleSecurityRule)
-			}
+		security := secure.Group("/security")
+		{
+			security.GET("/rules", handler.ListSecurityRules)
+			security.POST("/rules", handler.CreateSecurityRule)
+			security.GET("/rules/:id", handler.GetSecurityRule)
+			security.PUT("/rules/:id", handler.UpdateSecurityRule)
+			security.DELETE("/rules/:id", handler.DeleteSecurityRule)
+			security.POST("/rules/:id/toggle", handler.ToggleSecurityRule)
 
-			tasks := secure.Group("/tasks")
-			{
-				tasks.GET("", handler.ListTasks)
-				tasks.POST("", handler.CreateTask)
-				tasks.GET("/:id", handler.GetTask)
-				tasks.PUT("/:id", handler.UpdateTask)
-				tasks.DELETE("/:id", handler.DeleteTask)
-				tasks.POST("/:id/run", handler.RunTask)
-				tasks.POST("/:id/toggle", handler.ToggleTask)
-			}
+			// SSH 管理
+			security.GET("/ssh", handler.ListSSHAccounts)
+			security.POST("/ssh", handler.CreateSSHAccount)
+			security.GET("/ssh/:id", handler.GetSSHAccount)
+			security.GET("/ssh/:id/full", handler.GetSSHAccountFull)
+			security.PUT("/ssh/:id", handler.UpdateSSHAccount)
+			security.DELETE("/ssh/:id", handler.DeleteSSHAccount)
+			security.POST("/ssh/:id/test", handler.TestSSHConnection)
+			security.POST("/ssh/:id/credential", handler.ChangeSSHCredential)
+			security.POST("/ssh/:id/change-password", handler.ChangeRemotePassword)
+			security.POST("/ssh/:id/change-port", handler.ChangeSSHPort)
+			security.POST("/ssh/:id/restart", handler.RestartSSHD)
+			security.POST("/ssh/:id/install-key", handler.InstallSSHKey)
+			security.POST("/ssh/:id/command", handler.ExecuteSSHCommand)
+			security.GET("/ssh/:id/sshd-config", handler.GetSSHdConfig)
+			security.PUT("/ssh/:id/sshd-config", handler.SaveSSHdConfig)
 
-			logs := secure.Group("/logs")
-			{
-				logs.GET("", handler.ListLogs)
-				logs.GET("/sources", handler.GetLogSources)
-				logs.DELETE("/clear", handler.ClearLogs)
-				logs.GET("/system", handler.GetSystemLogs)
-			}
+			// 防火墙管理
+			security.GET("/firewall/status", handler.GetFirewallStatus)
+			security.POST("/firewall/rules", handler.AddFirewallRule)
+			security.DELETE("/firewall/rules/:id", handler.DeleteFirewallRule)
+			security.GET("/firewall/ports", handler.GetFirewallPorts)
+			security.POST("/firewall/restart", handler.RestartFirewall)
+		}
 
-			settings := secure.Group("/settings")
-			{
-				settings.GET("", handler.GetSettings)
-				settings.PUT("", handler.UpdateSettings)
-				settings.GET("/:key", handler.GetSettingByKey)
-			}
+		tasks := secure.Group("/tasks")
+		{
+			tasks.GET("", handler.ListTasks)
+			tasks.POST("", handler.CreateTask)
+			tasks.GET("/:id", handler.GetTask)
+			tasks.PUT("/:id", handler.UpdateTask)
+			tasks.DELETE("/:id", handler.DeleteTask)
+			tasks.POST("/:id/run", handler.RunTask)
+			tasks.POST("/:id/toggle", handler.ToggleTask)
+		}
+
+		logs := secure.Group("/logs")
+		{
+			logs.GET("", handler.ListLogs)
+			logs.GET("/sources", handler.GetLogSources)
+			logs.DELETE("/clear", handler.ClearLogs)
+			logs.GET("/system", handler.GetSystemLogs)
+			logs.GET("/ssh", handler.GetSSHLogs)
+		}
+
+		settings := secure.Group("/settings")
+		{
+			settings.GET("", handler.GetSettings)
+			settings.PUT("", handler.UpdateSettings)
+			settings.GET("/:key", handler.GetSettingByKey)
+		}
 		}
 	}
 
 	r.GET("/ws", handler.WSFileHandler)
+	r.GET("/ws/ssh/:id", handler.WebSSHHandler)
 
 	r.NoRoute(func(c *gin.Context) {
 		if _, err := os.Stat("./static" + c.Request.URL.Path); err == nil {

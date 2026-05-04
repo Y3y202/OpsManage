@@ -25,45 +25,227 @@ async function handleLogout() {
   router.push('/login')
 }
 
-onMounted(() => {
-  userStore.fetchProfile()
-})
+onMounted(() => { userStore.fetchProfile() })
 </script>
 
 <template>
-  <el-container style="height: 100vh">
-    <el-aside :width="isCollapse ? '64px' : '200px'" style="background: #304156; transition: width 0.3s">
-      <div style="height: 60px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; font-weight: bold">
-        {{ isCollapse ? 'OM' : 'OpsManage' }}
+  <el-container class="layout-root">
+    <el-aside :width="isCollapse ? '72px' : '240px'" class="layout-sidebar">
+      <div class="sidebar-brand">
+        <svg width="32" height="32" viewBox="0 0 40 40" fill="none" class="brand-icon">
+          <rect width="40" height="40" rx="12" fill="url(#g)"/>
+          <path d="M12 20L18 14L26 22L20 28L12 20Z" fill="white" opacity="0.9"/>
+          <path d="M18 20L22 16L28 22L22 28L18 20Z" fill="white" opacity="0.6"/>
+          <defs><linearGradient id="g" x1="0" y1="0" x2="40" y2="40"><stop stop-color="#4f8cff"/><stop offset="1" stop-color="#6c5ce7"/></linearGradient></defs>
+        </svg>
+        <span v-if="!isCollapse" class="brand-text">OpsManage</span>
       </div>
+
       <el-menu
         :default-active="route.path"
         :collapse="isCollapse"
-        background-color="#304156"
-        text-color="#bfcbd9"
-        active-text-color="#409eff"
+        :collapse-transition="false"
+        class="sidebar-menu"
         router
       >
-        <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
+        <el-menu-item
+          v-for="item in menuItems"
+          :key="item.path"
+          :index="item.path"
+          class="menu-item"
+        >
           <el-icon><component :is="item.icon" /></el-icon>
           <template #title>{{ item.title }}</template>
         </el-menu-item>
       </el-menu>
+
+      <div class="sidebar-footer">
+        <el-button
+          :icon="isCollapse ? 'DArrowRight' : 'DArrowLeft'"
+          text
+          class="collapse-btn"
+          @click="isCollapse = !isCollapse"
+        />
+      </div>
     </el-aside>
+
     <el-container>
-      <el-header style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #eee; background: #fff">
-        <el-icon style="cursor: pointer; font-size: 20px" @click="isCollapse = !isCollapse">
-          <Fold v-if="!isCollapse" />
-          <Expand v-else />
-        </el-icon>
-        <div style="display: flex; align-items: center; gap: 12px">
-          <span>{{ userStore.user?.nickname || userStore.user?.username }}</span>
-          <el-button type="danger" size="small" @click="handleLogout">退出</el-button>
+      <el-header class="layout-header">
+        <div class="header-left">
+          <el-breadcrumb separator="/">
+            <el-breadcrumb-item :to="{ path: '/' }">首页</el-breadcrumb-item>
+            <el-breadcrumb-item>{{ menuItems.find(m => m.path === route.path)?.title || '' }}</el-breadcrumb-item>
+          </el-breadcrumb>
+        </div>
+        <div class="header-right">
+          <el-dropdown trigger="click" @command="handleLogout">
+            <div class="user-avatar-trigger">
+              <div class="avatar-circle">
+                {{ (userStore.user?.nickname || userStore.user?.username || 'U').charAt(0).toUpperCase() }}
+              </div>
+              <span class="username">{{ userStore.user?.nickname || userStore.user?.username }}</span>
+              <el-icon><ArrowDown /></el-icon>
+            </div>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item disabled>
+                  <div style="line-height: 1.4">
+                    <div style="font-weight: 600">{{ userStore.user?.nickname || userStore.user?.username }}</div>
+                    <div style="color: #86909c; font-size: 12px">{{ userStore.user?.role === 'admin' ? '管理员' : '用户' }}</div>
+                  </div>
+                </el-dropdown-item>
+                <el-dropdown-item divided command="logout">
+                  <el-icon><SwitchButton /></el-icon> 退出登录
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </el-header>
-      <el-main style="background: #f0f2f5; padding: 20px">
+
+      <el-main class="layout-main">
         <router-view />
       </el-main>
     </el-container>
   </el-container>
 </template>
+
+<style scoped>
+.layout-root {
+  height: 100vh;
+}
+
+/* ===== 侧栏 ===== */
+.layout-sidebar {
+  background: linear-gradient(180deg, #1a1f36 0%, #12152a 100%);
+  display: flex;
+  flex-direction: column;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  position: relative;
+}
+.layout-sidebar::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sidebar-brand {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 16px;
+  flex-shrink: 0;
+}
+.brand-icon {
+  flex-shrink: 0;
+}
+.brand-text {
+  font-size: 18px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #4f8cff, #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  white-space: nowrap;
+}
+
+.sidebar-menu {
+  flex: 1;
+  border: none !important;
+  background: transparent !important;
+  padding: 8px;
+}
+
+.menu-item {
+  border-radius: 10px !important;
+  margin: 2px 0 !important;
+  height: 44px !important;
+  line-height: 44px !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+  transition: all 0.2s ease;
+}
+.menu-item:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #fff !important;
+}
+.menu-item.is-active {
+  background: linear-gradient(135deg, rgba(79, 140, 255, 0.2), rgba(108, 92, 231, 0.15)) !important;
+  color: #fff !important;
+  box-shadow: inset 3px 0 0 0 #4f8cff;
+}
+.menu-item .el-icon {
+  font-size: 18px;
+  margin-right: 4px;
+}
+
+.sidebar-footer {
+  padding: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.collapse-btn {
+  width: 100%;
+  color: rgba(255, 255, 255, 0.4) !important;
+  justify-content: center;
+}
+.collapse-btn:hover {
+  color: #fff !important;
+}
+
+/* ===== 顶栏 ===== */
+.layout-header {
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  height: 56px;
+  border-bottom: 1px solid var(--om-border);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+}
+.header-left {
+  display: flex;
+  align-items: center;
+}
+.user-avatar-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+.user-avatar-trigger:hover {
+  background: #f2f3f5;
+}
+.avatar-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #4f8cff, #6c5ce7);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+}
+.username {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--om-text);
+}
+
+/* ===== 主内容 ===== */
+.layout-main {
+  background: var(--om-bg);
+  padding: 24px;
+  overflow-y: auto;
+}
+</style>

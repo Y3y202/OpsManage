@@ -8,10 +8,24 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+// CPU 使用率采集（基于 /proc/stat 差值计算）
+var (
+	lastCPUTotal  int64
+	lastCPUIdle   int64
+	cpuMu         sync.Mutex
+)
+
+func init() {
+	idle, total := readCPUTimes()
+	lastCPUIdle = idle
+	lastCPUTotal = total
+}
 
 // GetDashboard 获取仪表盘概览
 // @Summary 获取仪表盘概览数据
@@ -22,17 +36,32 @@ import (
 // @Success 200 {object} map[string]interface{}
 // @Router /dashboard [get]
 func GetDashboard(c *gin.Context) {
-	var siteCount, dbCount, containerCount int64
+	var siteCount, dbCount, containerCount, taskCount, sshCount, ruleCount int64
 	config.DB.Model(&model.Website{}).Count(&siteCount)
 	config.DB.Model(&model.Database{}).Count(&dbCount)
 	config.DB.Model(&model.Container{}).Count(&containerCount)
+	config.DB.Model(&model.Task{}).Count(&taskCount)
+	config.DB.Model(&model.SSHAccount{}).Count(&sshCount)
+	config.DB.Model(&model.SecurityRule{}).Count(&ruleCount)
+
+	// 统计运行中的
+	var siteRunning, dbRunning, containerRunning int64
+	config.DB.Model(&model.Website{}).Where("status = ?", "running").Count(&siteRunning)
+	config.DB.Model(&model.Database{}).Where("status = ?", "running").Count(&dbRunning)
+	config.DB.Model(&model.Container{}).Where("status = ?", "running").Count(&containerRunning)
 
 	success(c, gin.H{
-		"websites":        siteCount,
-		"databases":       dbCount,
-		"containers":      containerCount,
-		"panel_version":   config.AppConfig.Panel.Version,
-		"server_time":     time.Now().Format("2006-01-02 15:04:05"),
+		"websites":          siteCount,
+		"websites_running":  siteRunning,
+		"databases":         dbCount,
+		"databases_running": dbRunning,
+		"containers":        containerCount,
+		"containers_running": containerRunning,
+		"tasks":             taskCount,
+		"ssh_accounts":      sshCount,
+		"security_rules":    ruleCount,
+		"panel_version":     config.AppConfig.Panel.Version,
+		"server_time":       time.Now().Format("2006-01-02 15:04:05"),
 	})
 }
 
@@ -68,11 +97,13 @@ func GetSystemStatus(c *gin.Context) {
 	loadAvg := getLoadAvg()
 	memInfo := getMemInfo()
 	diskInfo := getDiskInfo()
+	cpuPercent := getCPUPercent()
 
 	success(c, gin.H{
 		"load": loadAvg,
 		"cpu": gin.H{
-			"cores": runtime.NumCPU(),
+			"cores":        runtime.NumCPU(),
+			"used_percent": cpuPercent,
 		},
 		"memory": memInfo,
 		"disk":   diskInfo,
@@ -199,4 +230,57 @@ func getDiskInfo() map[string]any {
 		"free":         free / (1024 * 1024),
 		"used_percent": usedPercent,
 	}
+}
+
+// readCPUTimes 从 /proc/stat 读取 CPU 时间
+func readCPUTimes() (idle, total int64) {
+	data, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return 0, 0
+	}
+	lines := strings.Split(string(data), "\n")
+	if len(lines) == 0 {
+		return 0, 0
+	}
+	// cpu  user nice system idle iowait irq softirq steal guest guest_nice
+	fields := strings.Fields(lines[0])
+	if len(fields) < 5 || fields[0] != "cpu" {
+		return 0, 0
+	}
+	var vals []int64
+	for i := 1; i < len(fields); i++ {
+		var v int64
+		fmt.Sscanf(fields[i], "%d", &v)
+		vals = append(vals, v)
+		total += v
+	}
+	if len(vals) > 3 {
+		idle = vals[3] // idle is 4th field
+		if len(vals) > 4 {
+			idle += vals[4] // iowait
+		}
+	}
+	return
+}
+
+// getCPUPercent 计算 CPU 使用率（差值法）
+func getCPUPercent() float64 {
+	cpuMu.Lock()
+	defer cpuMu.Unlock()
+
+	idle, total := readCPUTimes()
+	if total == 0 {
+		return 0
+	}
+
+	totalDelta := total - lastCPUTotal
+	idleDelta := idle - lastCPUIdle
+
+	lastCPUTotal = total
+	lastCPUIdle = idle
+
+	if lastCPUTotal == 0 || totalDelta == 0 {
+		return 0
+	}
+	return (1.0 - float64(idleDelta)/float64(totalDelta)) * 100
 }

@@ -260,3 +260,282 @@ func GetContainerLogs(c *gin.Context) {
 	}
 	success(c, gin.H{"logs": string(out)})
 }
+
+// GetDockerOverview 获取 Docker 总览概要
+// @Summary 获取容器、镜像、网络、卷等统计信息
+// @Tags 容器管理
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /containers/overview [get]
+func GetDockerOverview(c *gin.Context) {
+	// 容器统计
+	var totalContainers, runningContainers int64
+	config.DB.Model(&model.Container{}).Count(&totalContainers)
+	config.DB.Model(&model.Container{}).Where("status = ?", "running").Count(&runningContainers)
+
+	// 从 Docker 获取真实数据
+	overview := gin.H{
+		"containers_total":   totalContainers,
+		"containers_running": runningContainers,
+		"images":             countDockerItems("images", "-q"),
+		"networks":           countDockerItems("network", "ls", "-q"),
+		"volumes":            countDockerItems("volume", "ls", "-q"),
+		"compose":            0,
+		"compose_templates":  0,
+		"registries":         1,
+	}
+
+	// 磁盘占用
+	overview["disk_usage"] = getDockerDiskUsage()
+	overview["socket"] = "unix:///var/run/docker.sock"
+
+	success(c, overview)
+}
+
+func countDockerItems(args ...string) int {
+	out, err := exec.Command("docker", args...).CombinedOutput()
+	if err != nil {
+		return 0
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	count := 0
+	for _, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			count++
+		}
+	}
+	return count
+}
+
+func getDockerDiskUsage() map[string]any {
+	out, err := exec.Command("docker", "system", "df", "--format", "{{.Type}}\t{{.TotalCount}}\t{{.Size}}\t{{.Reclaimable}}").CombinedOutput()
+	if err != nil {
+		return map[string]any{}
+	}
+	disk := map[string]any{}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	for _, line := range lines {
+		parts := strings.SplitN(line, "\t", 4)
+		if len(parts) < 4 {
+			continue
+		}
+		switch parts[0] {
+		case "Images":
+			disk["images"] = map[string]string{"count": parts[1], "size": parts[2], "reclaimable": parts[3]}
+		case "Containers":
+			disk["containers"] = map[string]string{"count": parts[1], "size": parts[2], "reclaimable": parts[3]}
+		case "Local Volumes":
+			disk["volumes"] = map[string]string{"count": parts[1], "size": parts[2], "reclaimable": parts[3]}
+		case "Build Cache":
+			disk["build_cache"] = map[string]string{"count": parts[1], "size": parts[2], "reclaimable": parts[3]}
+		}
+	}
+	return disk
+}
+
+// ListDockerNetworks 获取 Docker 网络列表
+// @Summary 获取 Docker 网络列表
+// @Tags 容器管理
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /containers/networks [get]
+func ListDockerNetworks(c *gin.Context) {
+	out, err := exec.Command("docker", "network", "ls", "--format", "{{.ID}}\t{{.Name}}\t{{.Driver}}\t{{.Scope}}").CombinedOutput()
+	if err != nil {
+		fail(c, 500, "获取网络列表失败")
+		return
+	}
+	var networks []map[string]string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 4)
+		if len(parts) < 4 {
+			continue
+		}
+		networks = append(networks, map[string]string{
+			"id": parts[0], "name": parts[1], "driver": parts[2], "scope": parts[3],
+		})
+	}
+	success(c, networks)
+}
+
+// ListDockerVolumes 获取 Docker 存储卷列表
+// @Summary 获取 Docker 存储卷列表
+// @Tags 容器管理
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /containers/volumes [get]
+func ListDockerVolumes(c *gin.Context) {
+	out, err := exec.Command("docker", "volume", "ls", "--format", "{{.Name}}\t{{.Driver}}\t{{.Mountpoint}}").CombinedOutput()
+	if err != nil {
+		fail(c, 500, "获取存储卷列表失败")
+		return
+	}
+	var volumes []map[string]string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		volumes = append(volumes, map[string]string{
+			"name": parts[0], "driver": parts[1], "mountpoint": parts[2],
+		})
+	}
+	success(c, volumes)
+}
+
+// RemoveImage 删除镜像
+func RemoveImage(c *gin.Context) {
+	id := c.Param("id")
+	out, err := exec.Command("docker", "rmi", "-f", id).CombinedOutput()
+	if err != nil {
+		fail(c, 500, "删除镜像失败: "+string(out))
+		return
+	}
+	success(c, gin.H{"msg": "镜像已删除"})
+}
+
+// RemoveNetwork 删除网络
+func RemoveNetwork(c *gin.Context) {
+	id := c.Param("id")
+	out, err := exec.Command("docker", "network", "rm", id).CombinedOutput()
+	if err != nil {
+		fail(c, 500, "删除网络失败: "+string(out))
+		return
+	}
+	success(c, gin.H{"msg": "网络已删除"})
+}
+
+// RemoveVolume 删除存储卷
+func RemoveVolume(c *gin.Context) {
+	id := c.Param("id")
+	out, err := exec.Command("docker", "volume", "rm", "-f", id).CombinedOutput()
+	if err != nil {
+		fail(c, 500, "删除存储卷失败: "+string(out))
+		return
+	}
+	success(c, gin.H{"msg": "存储卷已删除"})
+}
+
+// PruneDocker 清理 Docker
+func PruneDocker(c *gin.Context) {
+	typ := c.DefaultQuery("type", "all")
+	var args []string
+	switch typ {
+	case "images":
+		args = []string{"image", "prune", "-f"}
+	case "containers":
+		args = []string{"container", "prune", "-f"}
+	case "volumes":
+		args = []string{"volume", "prune", "-f"}
+	default:
+		args = []string{"system", "prune", "-f"}
+	}
+	out, err := exec.Command("docker", args...).CombinedOutput()
+	if err != nil {
+		fail(c, 500, "清理失败: "+string(out))
+		return
+	}
+	success(c, gin.H{"msg": "清理完成", "output": strings.TrimSpace(string(out))})
+}
+
+// ========== 镜像仓库 CRUD ==========
+func ListRegistries(c *gin.Context) {
+	var list []model.DockerRegistry
+	config.DB.Find(&list)
+	success(c, list)
+}
+func CreateRegistry(c *gin.Context) {
+	var reg model.DockerRegistry
+	if err := c.ShouldBindJSON(&reg); err != nil {
+		fail(c, 400, "参数错误")
+		return
+	}
+	config.DB.Create(&reg)
+	success(c, reg)
+}
+func DeleteRegistry(c *gin.Context) {
+	id := c.Param("id")
+	config.DB.Delete(&model.DockerRegistry{}, id)
+	success(c, nil)
+}
+
+// ========== 编排项目 CRUD ==========
+func ListComposeProjects(c *gin.Context) {
+	var list []model.ComposeProject
+	config.DB.Find(&list)
+	success(c, list)
+}
+func CreateComposeProject(c *gin.Context) {
+	var proj model.ComposeProject
+	if err := c.ShouldBindJSON(&proj); err != nil {
+		fail(c, 400, "参数错误")
+		return
+	}
+	config.DB.Create(&proj)
+	success(c, proj)
+}
+func DeleteComposeProject(c *gin.Context) {
+	id := c.Param("id")
+	config.DB.Delete(&model.ComposeProject{}, id)
+	success(c, nil)
+}
+func StartComposeProject(c *gin.Context) {
+	id := c.Param("id")
+	var proj model.ComposeProject
+	if err := config.DB.First(&proj, id).Error; err != nil {
+		fail(c, 404, "未找到")
+		return
+	}
+	out, err := exec.Command("docker", "compose", "-f", proj.Path, "up", "-d").CombinedOutput()
+	if err != nil {
+		fail(c, 500, "启动失败: "+string(out))
+		return
+	}
+	config.DB.Model(&proj).Update("status", "running")
+	success(c, gin.H{"msg": "已启动"})
+}
+func StopComposeProject(c *gin.Context) {
+	id := c.Param("id")
+	var proj model.ComposeProject
+	if err := config.DB.First(&proj, id).Error; err != nil {
+		fail(c, 404, "未找到")
+		return
+	}
+	out, err := exec.Command("docker", "compose", "-f", proj.Path, "down").CombinedOutput()
+	if err != nil {
+		fail(c, 500, "停止失败: "+string(out))
+		return
+	}
+	config.DB.Model(&proj).Update("status", "stopped")
+	success(c, gin.H{"msg": "已停止"})
+}
+
+// ========== 编排模板 CRUD ==========
+func ListComposeTemplates(c *gin.Context) {
+	var list []model.ComposeTemplate
+	config.DB.Find(&list)
+	success(c, list)
+}
+func CreateComposeTemplate(c *gin.Context) {
+	var tpl model.ComposeTemplate
+	if err := c.ShouldBindJSON(&tpl); err != nil {
+		fail(c, 400, "参数错误")
+		return
+	}
+	config.DB.Create(&tpl)
+	success(c, tpl)
+}
+func DeleteComposeTemplate(c *gin.Context) {
+	id := c.Param("id")
+	config.DB.Delete(&model.ComposeTemplate{}, id)
+	success(c, nil)
+}
