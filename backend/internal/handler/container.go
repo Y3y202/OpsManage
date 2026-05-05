@@ -10,21 +10,49 @@ import (
 )
 
 // ListContainers 获取容器列表
-// @Summary 获取 Docker 容器列表（分页）
-// @Tags 容器管理
-// @Produce json
-// @Security BearerAuth
-// @Param page query int false "页码" default(1)
-// @Param page_size query int false "每页数量" default(20)
-// @Success 200 {object} map[string]interface{}
-// @Router /containers [get]
 func ListContainers(c *gin.Context) {
-	var containers []model.Container
-	var total int64
-	query := config.DB.Model(&model.Container{})
-	query.Count(&total)
-	paginate(c, query).Order("id desc").Find(&containers)
-	pageResult(c, containers, total)
+	// 从 Docker 直接获取真实容器列表
+	out, err := exec.Command("docker", "ps", "-a", "--format", "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}").CombinedOutput()
+	if err != nil {
+		// Docker 不可用时，回退到数据库
+		var containers []model.Container
+		var total int64
+		query := config.DB.Model(&model.Container{})
+		query.Count(&total)
+		paginate(c, query).Order("id desc").Find(&containers)
+		pageResult(c, containers, total)
+		return
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	var containers []map[string]string
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 5)
+		if len(parts) < 4 {
+			continue
+		}
+		container := map[string]string{
+			"container_id": parts[0],
+			"name":         parts[1],
+			"image":        parts[2],
+			"status":       parts[3],
+		}
+		if len(parts) > 4 {
+			container["ports"] = parts[4]
+		}
+		// 解析状态
+		if strings.Contains(parts[3], "Up") {
+			container["status"] = "running"
+		} else {
+			container["status"] = "stopped"
+		}
+		containers = append(containers, container)
+	}
+
+	success(c, gin.H{"list": containers, "total": len(containers)})
 }
 
 type CreateContainerReq struct {
@@ -262,22 +290,29 @@ func GetContainerLogs(c *gin.Context) {
 }
 
 // GetDockerOverview 获取 Docker 总览概要
-// @Summary 获取容器、镜像、网络、卷等统计信息
-// @Tags 容器管理
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} map[string]interface{}
-// @Router /containers/overview [get]
 func GetDockerOverview(c *gin.Context) {
-	// 容器统计
-	var totalContainers, runningContainers int64
-	config.DB.Model(&model.Container{}).Count(&totalContainers)
-	config.DB.Model(&model.Container{}).Where("status = ?", "running").Count(&runningContainers)
+	// 从 Docker 获取真实容器统计
+	runningCount := 0
+	totalCount := 0
+
+	out, err := exec.Command("docker", "ps", "-a", "--format", "{{.Status}}").CombinedOutput()
+	if err == nil {
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		for _, line := range lines {
+			if line == "" {
+				continue
+			}
+			totalCount++
+			if strings.Contains(line, "Up") {
+				runningCount++
+			}
+		}
+	}
 
 	// 从 Docker 获取真实数据
 	overview := gin.H{
-		"containers_total":   totalContainers,
-		"containers_running": runningContainers,
+		"containers_total":   totalCount,
+		"containers_running": runningCount,
 		"images":             countDockerItems("images", "-q"),
 		"networks":           countDockerItems("network", "ls", "-q"),
 		"volumes":            countDockerItems("volume", "ls", "-q"),
