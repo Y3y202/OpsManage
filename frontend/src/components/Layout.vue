@@ -79,7 +79,7 @@ onMounted(() => { userStore.fetchProfile() })
           >
             <template #title>
               <el-icon><component :is="item.icon" /></el-icon>
-              <span @click.stop="item.path ? router.push(item.path) : null">{{ item.title }}</span>
+              <span>{{ item.title }}</span>
             </template>
             <el-menu-item
               v-for="child in item.children"
@@ -205,7 +205,7 @@ onMounted(() => { userStore.fetchProfile() })
   padding: 8px;
 }
 
-.menu-item {
+:deep(.menu-item) {
   border-radius: 10px !important;
   margin: 2px 0 !important;
   height: 44px !important;
@@ -213,16 +213,52 @@ onMounted(() => { userStore.fetchProfile() })
   color: rgba(255, 255, 255, 0.6) !important;
   transition: all 0.2s ease;
 }
-.menu-item:hover {
+/* 二级菜单项不限制高度 */
+:deep(.menu-item.el-sub-menu) {
+  height: auto !important;
+  line-height: normal !important;
+}
+:deep(.menu-item.el-sub-menu > .el-sub-menu__title) {
+  height: 44px !important;
+  line-height: 44px !important;
+  border-radius: 10px !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+:deep(.menu-item.el-sub-menu > .el-sub-menu__title:hover) {
   background: rgba(255, 255, 255, 0.06) !important;
   color: #fff !important;
 }
-.menu-item.is-active {
+:deep(.menu-item.el-sub-menu > .el-sub-menu__title .el-sub-menu__icon-arrow) {
+  color: rgba(255, 255, 255, 0.4) !important;
+}
+/* 子菜单项样式 */
+:deep(.el-sub-menu .el-menu-item) {
+  border-radius: 10px !important;
+  margin: 2px 0 !important;
+  height: 40px !important;
+  line-height: 40px !important;
+  padding-left: 48px !important;
+  color: rgba(255, 255, 255, 0.5) !important;
+}
+:deep(.el-sub-menu .el-menu-item:hover) {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #fff !important;
+}
+:deep(.el-sub-menu .el-menu-item.is-active) {
   background: linear-gradient(135deg, rgba(79, 140, 255, 0.2), rgba(108, 92, 231, 0.15)) !important;
   color: #fff !important;
   box-shadow: inset 3px 0 0 0 #4f8cff;
 }
-.menu-item .el-icon {
+:deep(.menu-item:hover) {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #fff !important;
+}
+:deep(.menu-item.is-active) {
+  background: linear-gradient(135deg, rgba(79, 140, 255, 0.2), rgba(108, 92, 231, 0.15)) !important;
+  color: #fff !important;
+  box-shadow: inset 3px 0 0 0 #4f8cff;
+}
+:deep(.menu-item .el-icon) {
   font-size: 18px;
   margin-right: 4px;
 }
