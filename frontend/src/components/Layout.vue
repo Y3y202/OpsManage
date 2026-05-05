@@ -18,7 +18,7 @@ interface MenuItem {
 const menuItems: MenuItem[] = [
   { path: '/dashboard', icon: 'Odometer', title: '仪表盘' },
   { path: '', icon: 'Globe', title: '网站', children: [
-    { path: '/websites', icon: 'List', title: '站点管理' },
+    { path: '/websites', icon: 'Globe', title: '网站' },
     { path: '/certificates', icon: 'Key', title: '证书' }
   ]},
   { path: '/databases', icon: 'Coin', title: '数据库' },
