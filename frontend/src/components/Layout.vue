@@ -17,8 +17,7 @@ interface MenuItem {
 
 const menuItems: MenuItem[] = [
   { path: '/dashboard', icon: 'Odometer', title: '仪表盘' },
-  { path: '', icon: 'Globe', title: '网站', children: [
-    { path: '/websites', icon: 'Globe', title: '网站' },
+  { path: '/websites', icon: 'Globe', title: '网站', children: [
     { path: '/certificates', icon: 'Key', title: '证书' }
   ]},
   { path: '/databases', icon: 'Coin', title: '数据库' },
@@ -80,7 +79,7 @@ onMounted(() => { userStore.fetchProfile() })
           >
             <template #title>
               <el-icon><component :is="item.icon" /></el-icon>
-              <span>{{ item.title }}</span>
+              <span @click.stop="item.path ? router.push(item.path) : null">{{ item.title }}</span>
             </template>
             <el-menu-item
               v-for="child in item.children"
