@@ -152,6 +152,18 @@ install_nginx() {
 
     progress 70 "正在配置 Nginx 服务..."
     systemctl enable nginx 2>/dev/null || true
+
+    # 检查端口占用并启动
+    if ss -tlnp 2>/dev/null | grep -q ':80 ' || netstat -tlnp 2>/dev/null | grep -q ':80 '; then
+        local port_holder
+        port_holder=$(ss -tlnp 2>/dev/null | grep ':80 ' | grep -oP 'users:\(\("([^"]+)' | head -1 | cut -d'"' -f2)
+        log_info "端口 80 已被 ${port_holder:-其他服务} 占用，修改 Nginx 监听端口为 8080..."
+        # 修改所有配置文件中的 80 端口
+        find /etc/nginx -name "*.conf" -exec sed -i 's/listen\s\+80;/listen 8080;/g' {} \; 2>/dev/null || true
+        find /etc/nginx -name "*.conf" -exec sed -i 's/listen\s\+\[::\]:80;/listen [::]:8080;/g' {} \; 2>/dev/null || true
+        log_info "Nginx 将监听 8080 端口"
+    fi
+
     systemctl start nginx 2>/dev/null || true
 
     progress 90 "正在验证安装..."
