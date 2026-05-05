@@ -118,6 +118,11 @@ func InitDB(cfg *Config) error {
 		&model.DockerRegistry{},
 		&model.ComposeProject{},
 		&model.ComposeTemplate{},
+		&model.NginxSite{},
+		&model.DBInstance{},
+		&model.DBDatabase{},
+		&model.DBUser{},
+		&model.DBBackup{},
 	); err != nil {
 		return fmt.Errorf("迁移失败: %w", err)
 	}

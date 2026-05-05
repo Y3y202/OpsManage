@@ -129,6 +129,88 @@ type Setting struct {
 	Value string `gorm:"type:text" json:"value"`
 }
 
+// NginxSite Nginx站点配置
+type NginxSite struct {
+	ID            uint           `gorm:"primarykey" json:"id"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
+	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"`
+	Name          string         `gorm:"size:128;not null" json:"name"`
+	Domain        string         `gorm:"size:256;not null" json:"domain"`
+	Root          string         `gorm:"size:512;not null" json:"root"`
+	Port          int            `gorm:"default:80" json:"port"`
+	SSL           bool           `gorm:"default:false" json:"ssl"`
+	SSLCert       string         `gorm:"size:512" json:"ssl_cert"`
+	SSLKey        string         `gorm:"size:512" json:"ssl_key"`
+	ProxyPass     string         `gorm:"size:512" json:"proxy_pass"`
+	ProxyType     string         `gorm:"size:32;default:static" json:"proxy_type"`  // static / proxy / php
+	PHPVersion    string         `gorm:"size:16" json:"php_version"`
+	Gzip          bool           `gorm:"default:true" json:"gzip"`
+	CacheEnabled  bool           `gorm:"default:false" json:"cache_enabled"`
+	CacheTime     int            `gorm:"default:7" json:"cache_time"`
+	RateLimit     int            `gorm:"default:0" json:"rate_limit"`
+	Status        string         `gorm:"size:16;default:running" json:"status"`
+	ConfigFile    string         `gorm:"size:512" json:"config_file"`
+	ConfigContent string         `gorm:"type:text" json:"config_content"`
+	Remark        string         `gorm:"size:256" json:"remark"`
+}
+
+// DBInstance 数据库服务实例（已安装的数据库服务）
+type DBInstance struct {
+	ID         uint           `gorm:"primarykey" json:"id"`
+	CreatedAt  time.Time      `json:"created_at"`
+	UpdatedAt  time.Time      `json:"updated_at"`
+	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
+	Name       string         `gorm:"size:128;not null" json:"name"`
+	Type       string         `gorm:"size:32;not null" json:"type"` // mysql / postgresql / redis
+	Version    string         `gorm:"size:32" json:"version"`
+	InstallWay string         `gorm:"size:16;default:apt" json:"install_way"`
+	Host       string         `gorm:"size:128;default:127.0.0.1" json:"host"`
+	Port       int            `json:"port"`
+	RootPass   string         `gorm:"size:128" json:"-"`
+	Status     string         `gorm:"size:16;default:stopped" json:"status"`
+	ConfigPath string         `gorm:"size:512" json:"config_path"`
+	DataPath   string         `gorm:"size:512" json:"data_path"`
+	Remark     string         `gorm:"size:256" json:"remark"`
+}
+
+// DBDatabase 数据库中的具体 database/schema
+type DBDatabase struct {
+	ID         uint           `gorm:"primarykey" json:"id"`
+	CreatedAt  time.Time      `json:"created_at"`
+	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
+	InstanceID uint           `gorm:"index;not null" json:"instance_id"`
+	Name       string         `gorm:"size:128;not null" json:"name"`
+	Charset    string         `gorm:"size:32;default:utf8mb4" json:"charset"`
+	Collation  string         `gorm:"size:64" json:"collation"`
+	Size       int64          `gorm:"default:0" json:"size"`
+	Remark     string         `gorm:"size:256" json:"remark"`
+}
+
+// DBUser 数据库用户
+type DBUser struct {
+	ID         uint           `gorm:"primarykey" json:"id"`
+	CreatedAt  time.Time      `json:"created_at"`
+	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
+	InstanceID uint           `gorm:"index;not null" json:"instance_id"`
+	Username   string         `gorm:"size:64;not null" json:"username"`
+	Password   string         `gorm:"size:128" json:"-"`
+	Host       string         `gorm:"size:128;default:%" json:"host"`
+	Privileges string         `gorm:"size:256" json:"privileges"`
+	DBName     string         `gorm:"size:128" json:"db_name"`
+}
+
+// DBBackup 数据库备份记录
+type DBBackup struct {
+	ID         uint      `gorm:"primarykey" json:"id"`
+	CreatedAt  time.Time `json:"created_at"`
+	InstanceID uint      `gorm:"index;not null" json:"instance_id"`
+	DBName     string    `gorm:"size:128" json:"db_name"`
+	FilePath   string    `gorm:"size:512" json:"file_path"`
+	Size       int64     `gorm:"default:0" json:"size"`
+	Status     string    `gorm:"size:16;default:success" json:"status"`
+}
+
 // DockerRegistry 镜像仓库
 type DockerRegistry struct {
 	ID        uint           `gorm:"primarykey" json:"id"`

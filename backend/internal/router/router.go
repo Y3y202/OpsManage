@@ -80,16 +80,73 @@ func NewServer(cfg *config.Config) *http.Server {
 				site.POST("/:id/stop", handler.StopWebsite)
 			}
 
-			db := secure.Group("/databases")
-			{
-				db.GET("", handler.ListDatabases)
-				db.POST("", handler.CreateDatabase)
-				db.GET("/:id", handler.GetDatabase)
-				db.PUT("/:id", handler.UpdateDatabase)
-				db.DELETE("/:id", handler.DeleteDatabase)
-				db.POST("/:id/start", handler.StartDatabase)
-				db.POST("/:id/stop", handler.StopDatabase)
-			}
+		db := secure.Group("/databases")
+		{
+			db.GET("", handler.ListDatabases)
+			db.POST("", handler.CreateDatabase)
+			db.GET("/:id", handler.GetDatabase)
+			db.PUT("/:id", handler.UpdateDatabase)
+			db.DELETE("/:id", handler.DeleteDatabase)
+			db.POST("/:id/start", handler.StartDatabase)
+			db.POST("/:id/stop", handler.StopDatabase)
+
+			// 数据库服务管理（新）
+			db.GET("/services/status", handler.DBServiceStatus)
+			db.GET("/instances", handler.ListDBInstances)
+			db.POST("/instances", handler.CreateDBInstance)
+			db.GET("/instances/:id", handler.GetDBInstance)
+			db.POST("/instances/:id/:action", handler.DBInstanceAction)
+			db.GET("/instances/:id/config", handler.DBInstanceConfig)
+			db.PUT("/instances/:id/config", handler.DBInstanceConfig)
+			db.GET("/instances/:id/stats", handler.DBInstanceStats)
+
+			// 数据库管理
+			db.GET("/instances/:id/databases", handler.ListDBDatabases)
+			db.POST("/instances/:id/databases", handler.CreateDBDatabase)
+			db.DELETE("/databases/:did", handler.DeleteDBDatabase)
+			db.POST("/instances/:id/databases/sync", handler.SyncDBDatabases)
+
+			// 用户管理
+			db.GET("/instances/:id/users", handler.ListDBUsers)
+			db.POST("/instances/:id/users", handler.CreateDBUser)
+			db.DELETE("/users/:did", handler.DeleteDBUser)
+
+			// 备份管理
+			db.GET("/instances/:id/backups", handler.ListDBBackups)
+			db.POST("/instances/:id/backups", handler.CreateDBBackup)
+			db.POST("/backups/:bid/restore", handler.RestoreDBBackup)
+		}
+
+		// Nginx 管理
+		nginx := secure.Group("/nginx")
+		{
+			nginx.GET("/status", handler.NginxStatus)
+			nginx.GET("/overview", handler.NginxStatusOverview)
+			nginx.POST("/install", handler.NginxInstall)
+			nginx.POST("/service", handler.NginxService)
+			nginx.GET("/test", handler.NginxTestConfig)
+			nginx.POST("/import", handler.NginxImportSites)
+
+			// 站点管理
+			nginx.GET("/sites", handler.ListNginxSites)
+			nginx.POST("/sites", handler.CreateNginxSite)
+			nginx.GET("/sites/:id", handler.GetNginxSite)
+			nginx.PUT("/sites/:id", handler.UpdateNginxSite)
+			nginx.DELETE("/sites/:id", handler.DeleteNginxSite)
+			nginx.POST("/sites/:id/:action", handler.NginxSiteAction)
+			nginx.POST("/sites/:id/reload", handler.NginxSiteReload)
+
+			// SSL 管理
+			nginx.POST("/sites/:id/ssl", handler.NginxSiteSSL)
+
+			// 配置编辑
+			nginx.GET("/sites/:id/config", handler.NginxSiteConfig)
+			nginx.PUT("/sites/:id/config", handler.NginxSiteConfig)
+
+			// 日志查看
+			nginx.GET("/sites/:id/logs", handler.NginxSiteLogs)
+			nginx.GET("/sites/:id/logs/ws", handler.NginxSiteLogStream)
+		}
 
 			container := secure.Group("/containers")
 			{
