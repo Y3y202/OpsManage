@@ -40,3 +40,26 @@ export function createProgressStream(taskId: string): EventSource {
   const token = localStorage.getItem('token')
   return new EventSource(`/sse/progress/${taskId}`)
 }
+
+// 创建带认证的 SSE 连接
+export function connectProgressStream(taskId: string, onMessage: (data: any) => void, onError?: (err: any) => void) {
+  const token = localStorage.getItem('token')
+  const eventSource = new EventSource(`/sse/progress/${taskId}`)
+
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      onMessage(data)
+    } catch (e) {
+      console.error('Parse SSE data error:', e)
+    }
+  }
+
+  eventSource.onerror = (err) => {
+    console.error('SSE error:', err)
+    if (onError) onError(err)
+    eventSource.close()
+  }
+
+  return eventSource
+}

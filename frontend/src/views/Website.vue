@@ -258,46 +258,81 @@
     </el-dialog>
 
     <!-- 安装进度对话框 -->
-    <el-dialog v-model="progressDialogVisible" title="安装进度" width="500px" :close-on-click-modal="false" :close-on-press-escape="false" destroy-on-close @close="closeProgressDialog">
+    <el-dialog v-model="progressDialogVisible" title="安装进度" width="650px" :close-on-click-modal="false" :close-on-press-escape="false" destroy-on-close @close="closeProgressDialog">
       <div class="install-progress">
         <div class="progress-header">
-          <el-icon class="progress-icon" :class="installStatus" :size="48">
-            <Loading v-if="installStatus === 'running'" />
-            <CircleCheck v-else-if="installStatus === 'success'" />
-            <CircleClose v-else-if="installStatus === 'failed'" />
-            <Clock v-else />
-          </el-icon>
+          <div class="service-badge" :class="installService">
+            <el-icon :size="24">
+              <Monitor v-if="installService === 'nginx'" />
+              <Coin v-else-if="installService === 'mysql'" />
+              <DataLine v-else-if="installService === 'postgresql'" />
+              <TrendCharts v-else />
+            </el-icon>
+          </div>
           <div class="progress-info">
             <div class="progress-title">
-              {{ installStatus === 'running' ? '正在安装 Nginx...' : installStatus === 'success' ? '安装成功！' : installStatus === 'failed' ? '安装失败' : '等待中...' }}
+              {{ getServiceName(installService) }} 安装
+              <el-tag v-if="installStatus === 'running'" type="warning" size="small">安装中</el-tag>
+              <el-tag v-else-if="installStatus === 'success'" type="success" size="small">完成</el-tag>
+              <el-tag v-else-if="installStatus === 'failed'" type="danger" size="small">失败</el-tag>
             </div>
             <div class="progress-message">{{ installMessage }}</div>
-            <div class="progress-detail" v-if="installDetail">{{ installDetail }}</div>
+          </div>
+          <div class="progress-percent">{{ installProgress }}%</div>
+        </div>
+        
+        <el-progress 
+          :percentage="installProgress" 
+          :status="installStatus === 'success' ? 'success' : installStatus === 'failed' ? 'exception' : undefined" 
+          :stroke-width="10" 
+          :show-text="false"
+        />
+        
+        <!-- 实时日志 -->
+        <div class="log-panel">
+          <div class="log-header">
+            <span>安装日志</span>
+            <el-button text size="small" @click="clearLogs">
+              <el-icon><Delete /></el-icon> 清空
+            </el-button>
+          </div>
+          <div class="log-content" ref="logContainer">
+            <div v-for="(log, index) in installLogs" :key="index" class="log-line" :class="getLogClass(log)">
+              <span class="log-time">{{ log.time }}</span>
+              <span class="log-text">{{ log.text }}</span>
+            </div>
+            <div v-if="installLogs.length === 0" class="log-empty">等待日志输出...</div>
           </div>
         </div>
-        <el-progress :percentage="installProgress" :status="installStatus === 'success' ? 'success' : installStatus === 'failed' ? 'exception' : undefined" :stroke-width="12" :show-text="true" style="margin: 20px 0;" />
+        
+        <!-- 进度步骤 -->
         <div class="progress-steps">
+          <div class="step" :class="{ active: installProgress >= 5, done: installProgress > 5 }">
+            <span class="step-dot"></span>
+            <span class="step-label">准备环境</span>
+          </div>
           <div class="step" :class="{ active: installProgress >= 10, done: installProgress > 10 }">
             <span class="step-dot"></span>
             <span class="step-label">更新软件源</span>
           </div>
           <div class="step" :class="{ active: installProgress >= 40, done: installProgress > 40 }">
             <span class="step-dot"></span>
-            <span class="step-label">安装 Nginx</span>
+            <span class="step-label">安装软件</span>
           </div>
           <div class="step" :class="{ active: installProgress >= 70, done: installProgress > 70 }">
             <span class="step-dot"></span>
             <span class="step-label">配置服务</span>
           </div>
-          <div class="step" :class="{ active: installProgress >= 100, done: installProgress > 100 }">
+          <div class="step" :class="{ active: installProgress >= 100, done: installProgress >= 100 }">
             <span class="step-dot"></span>
             <span class="step-label">完成</span>
           </div>
         </div>
       </div>
+      
       <template #footer>
         <el-button @click="closeProgressDialog" :disabled="installStatus === 'running'">
-          {{ installStatus === 'running' ? '安装中...' : '关闭' }}
+          {{ installStatus === 'running' ? '安装中，请稍候...' : '关闭' }}
         </el-button>
       </template>
     </el-dialog>
@@ -305,12 +340,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Monitor, Download, VideoPlay, VideoPause, Refresh, RefreshRight,
   CircleCheck, Lock, Unlock, Connection, Plus, Upload,
-  Edit, Document, List, Delete, Link, Promotion, Loading, CircleClose, Clock
+  Edit, Document, List, Delete, Link, Promotion,
+  Coin, DataLine, TrendCharts
 } from '@element-plus/icons-vue'
 import {
   getNginxStatus, getNginxOverview, nginxService,
@@ -333,9 +369,12 @@ const progressDialogVisible = ref(false)
 const installProgress = ref(0)
 const installStatus = ref('pending')
 const installMessage = ref('')
-const installDetail = ref('')
+const installService = ref('')
+const installLogs = ref<{time: string, text: string}[]>([])
 const currentTaskId = ref('')
+const logContainer = ref<HTMLElement | null>(null)
 let progressTimer: any = null
+let eventSource: EventSource | null = null
 
 // 站点对话框
 const siteDialogVisible = ref(false)
@@ -400,51 +439,101 @@ async function handleInstallNginx() {
   try {
     const res: any = await installNginx()
     currentTaskId.value = res.data?.task_id
+    installService.value = 'nginx'
     installProgress.value = 0
     installStatus.value = 'running'
     installMessage.value = '准备安装...'
-    installDetail.value = ''
+    installLogs.value = []
     progressDialogVisible.value = true
     
-    // 开始轮询进度
-    startProgressPolling()
+    // 使用 SSE 监听进度
+    connectSSE(currentTaskId.value)
   } catch (e: any) {
     ElMessage.error(e.message || '安装失败')
     installing.value = false
   }
 }
 
-function startProgressPolling() {
-  if (progressTimer) clearInterval(progressTimer)
-  progressTimer = setInterval(async () => {
-    if (!currentTaskId.value) return
+function connectSSE(taskId: string) {
+  // 关闭之前的连接
+  if (eventSource) {
+    eventSource.close()
+  }
+  
+  eventSource = new EventSource(`/sse/progress/${taskId}`)
+  
+  eventSource.onmessage = (event) => {
     try {
-      const res: any = await getTaskProgress(currentTaskId.value)
-      const data = res.data
-      installProgress.value = data.progress || 0
-      installStatus.value = data.status
-      installMessage.value = data.message || ''
-      installDetail.value = data.detail || ''
+      const data = JSON.parse(event.data)
       
-      if (data.status === 'success' || data.status === 'failed') {
-        clearInterval(progressTimer)
-        progressTimer = null
-        installing.value = false
-        if (data.status === 'success') {
-          ElMessage.success(data.message)
-          loadData()
-        } else {
-          ElMessage.error(data.message + (data.detail ? ': ' + data.detail : ''))
+      if (data.type === 'progress') {
+        installProgress.value = data.progress || 0
+        installStatus.value = data.status
+        installMessage.value = data.message || ''
+        
+        if (data.status === 'success' || data.status === 'failed') {
+          eventSource?.close()
+          eventSource = null
+          installing.value = false
+          if (data.status === 'success') {
+            ElMessage.success(data.message)
+            loadData()
+          } else {
+            ElMessage.error(data.message)
+          }
         }
+      } else if (data.type === 'log') {
+        // 添加日志
+        const now = new Date()
+        const time = now.toTimeString().substring(0, 8)
+        installLogs.value.push({ time, text: data.content })
+        
+        // 自动滚动到底部
+        nextTick(() => {
+          if (logContainer.value) {
+            logContainer.value.scrollTop = logContainer.value.scrollHeight
+          }
+        })
       }
     } catch (e) {
-      // ignore
+      console.error('SSE parse error:', e)
     }
-  }, 1000)
+  }
+  
+  eventSource.onerror = (err) => {
+    console.error('SSE error:', err)
+    eventSource?.close()
+    eventSource = null
+  }
+}
+
+function getLogClass(log: {time: string, text: string}) {
+  if (log.text.startsWith('✅') || log.text.includes('成功')) return 'success'
+  if (log.text.startsWith('❌') || log.text.includes('失败') || log.text.includes('错误')) return 'error'
+  if (log.text.startsWith('ℹ️') || log.text.startsWith('INFO')) return 'info'
+  return ''
+}
+
+function clearLogs() {
+  installLogs.value = []
+}
+
+function getServiceName(service: string) {
+  const names: any = {
+    nginx: 'Nginx',
+    mysql: 'MySQL',
+    postgresql: 'PostgreSQL',
+    redis: 'Redis'
+  }
+  return names[service] || service
 }
 
 function closeProgressDialog() {
   progressDialogVisible.value = false
+  if (eventSource) {
+    eventSource.close()
+    eventSource = null
+  }
   if (progressTimer) {
     clearInterval(progressTimer)
     progressTimer = null
@@ -784,44 +873,104 @@ async function loadLogs() {
 }
 
 .install-progress {
-  text-align: center;
-  padding: 10px 0;
+  padding: 5px 0;
   
   .progress-header {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 14px;
     margin-bottom: 16px;
     
-    .progress-icon {
-      &.running {
-        color: var(--el-color-primary);
-        animation: rotate 1.5s linear infinite;
-      }
-      &.success { color: var(--el-color-success); }
-      &.failed { color: var(--el-color-danger); }
-      &.pending { color: var(--el-text-color-secondary); }
+    .service-badge {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      
+      &.nginx { background: linear-gradient(135deg, #009639, #00d94e); }
+      &.mysql { background: linear-gradient(135deg, #00758f, #f29111); }
+      &.postgresql { background: linear-gradient(135deg, #336791, #6699cc); }
+      &.redis { background: linear-gradient(135deg, #dc382d, #ff6b6b); }
     }
     
     .progress-info {
-      text-align: left;
+      flex: 1;
       
       .progress-title {
         font-size: 16px;
         font-weight: 600;
-        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
       
       .progress-message {
         font-size: 13px;
         color: var(--el-text-color-secondary);
+        margin-top: 4px;
+      }
+    }
+    
+    .progress-percent {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--el-color-primary);
+      font-family: 'JetBrains Mono', monospace;
+    }
+  }
+  
+  .log-panel {
+    margin: 16px 0;
+    border: 1px solid var(--el-border-color-light);
+    border-radius: 8px;
+    overflow: hidden;
+    
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: var(--el-fill-color-light);
+      font-size: 13px;
+      font-weight: 500;
+    }
+    
+    .log-content {
+      height: 200px;
+      overflow-y: auto;
+      background: #1e1e1e;
+      padding: 8px;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      
+      .log-line {
+        display: flex;
+        gap: 8px;
+        padding: 2px 0;
+        line-height: 1.5;
+        
+        .log-time {
+          color: #888;
+          flex-shrink: 0;
+        }
+        
+        .log-text {
+          color: #d4d4d4;
+          word-break: break-all;
+        }
+        
+        &.success .log-text { color: #4ec9b0; }
+        &.error .log-text { color: #f44747; }
+        &.info .log-text { color: #569cd6; }
       }
       
-      .progress-detail {
-        font-size: 12px;
-        color: var(--el-text-color-placeholder);
-        margin-top: 4px;
-        word-break: break-all;
+      .log-empty {
+        color: #666;
+        text-align: center;
+        padding: 20px;
       }
     }
   }
@@ -829,31 +978,31 @@ async function loadLogs() {
   .progress-steps {
     display: flex;
     justify-content: space-between;
-    padding: 0 20px;
+    padding: 0 10px;
     
     .step {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       
       .step-dot {
-        width: 12px;
-        height: 12px;
+        width: 10px;
+        height: 10px;
         border-radius: 50%;
         background: var(--el-border-color);
         transition: all 0.3s;
       }
       
       .step-label {
-        font-size: 12px;
+        font-size: 11px;
         color: var(--el-text-color-secondary);
       }
       
       &.active {
         .step-dot {
           background: var(--el-color-primary);
-          box-shadow: 0 0 0 4px rgba(64, 158, 255, 0.2);
+          box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.2);
         }
         .step-label {
           color: var(--el-color-primary);
@@ -862,19 +1011,10 @@ async function loadLogs() {
       }
       
       &.done {
-        .step-dot {
-          background: var(--el-color-success);
-        }
-        .step-label {
-          color: var(--el-color-success);
-        }
+        .step-dot { background: var(--el-color-success); }
+        .step-label { color: var(--el-color-success); }
       }
     }
   }
-}
-
-@keyframes rotate {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
 }
 </style>
