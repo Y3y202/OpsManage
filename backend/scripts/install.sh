@@ -1,47 +1,77 @@
 #!/bin/bash
 # OpsManage 安装脚本（支持版本选择）
-# 用法: install.sh <service> [version] [options]
+# 用法: install.sh <service> [version] [root_pass]
 # 服务: nginx, mysql, postgresql, redis
+# 版本: 具体版本号 或 "latest"
+# 示例: install.sh nginx 1.24.0
+#       install.sh mysql latest mypassword
+#       install.sh nginx versions  # 列出可用版本
 
 set -e
 
-SERVICE=$1
-VERSION=$2
-ROOT_PASS=$3
+SERVICE="${1:-}"
+VERSION="${2:-latest}"
+ROOT_PASS="${3:-}"
 
-# 进度输出函数
+# ========== 输出函数 ==========
 progress() {
-    echo "PROGRESS:$1:$2"
+    echo "PROGRESS:${1}:${2}"
 }
 
 log_info() {
-    echo "INFO:$1"
+    echo "INFO:${1}"
 }
 
 log_error() {
-    echo "ERROR:$1"
+    echo "ERROR:${1}"
 }
 
 log_success() {
-    echo "SUCCESS:$1"
+    echo "SUCCESS:${1}"
 }
+
+log_detail() {
+    echo "DETAIL:${1}"
+}
+
+# ========== 工具函数 ==========
 
 # 检查是否为 root
 check_root() {
-    if [ "$EUID" -ne 0 ]; then
-        log_error "请使用 root 权限运行"
+    if [ "$(id -u)" -ne 0 ]; then
+        log_error "请使用 root 权限运行此脚本"
         exit 1
     fi
 }
 
-# 清理 MySQL 旧仓库问题
-clean_mysql_repo() {
-    log_info "清理旧的仓库配置..."
-    rm -f /etc/apt/sources.list.d/mysql*.list 2>/dev/null || true
-    rm -f /etc/apt/trusted.gpg.d/mysql* 2>/dev/null || true
-    if command -v apt-key &> /dev/null; then
-        apt-key del "A4A9406876FCBD3C456770C88C718D3B5072E1F5" 2>/dev/null || true
-    fi
+# 检查服务是否已安装
+is_installed() {
+    command -v "$1" &>/dev/null
+}
+
+# 检查服务是否运行
+is_running() {
+    systemctl is-active --quiet "$1" 2>/dev/null
+}
+
+# 获取系统代号
+get_codename() {
+    lsb_release -cs 2>/dev/null || echo "noble"
+}
+
+# 安装基础依赖
+install_deps() {
+    log_info "安装基础依赖..."
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get install -y -qq curl wget gnupg2 ca-certificates lsb-release apt-transport-https 2>&1 | tail -1
+}
+
+# 清理旧的仓库配置
+clean_repo() {
+    local pattern="$1"
+    log_info "清理 ${pattern} 旧仓库配置..."
+    rm -f /etc/apt/sources.list.d/${pattern}* 2>/dev/null || true
+    rm -f /etc/apt/trusted.gpg.d/${pattern}* 2>/dev/null || true
 }
 
 # 更新软件源
@@ -49,8 +79,11 @@ update_sources() {
     log_info "更新软件源..."
     progress 10 "正在更新软件源..."
     export DEBIAN_FRONTEND=noninteractive
-    apt-get update -qq 2>&1 | while read -r line; do
-        echo "DETAIL:$line"
+    apt-get update -qq 2>&1 | while IFS= read -r line; do
+        # 只输出重要信息
+        if echo "$line" | grep -qE "(Err|Fetched|Ign)"; then
+            log_detail "$line"
+        fi
     done
     log_info "软件源更新完成"
 }
@@ -58,58 +91,79 @@ update_sources() {
 # ========== Nginx 安装 ==========
 install_nginx() {
     log_info "开始安装 Nginx..."
-    
-    if command -v nginx &> /dev/null; then
-        log_success "Nginx 已安装: $(nginx -v 2>&1)"
+
+    if is_installed nginx; then
+        local ver
+        ver=$(nginx -v 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        log_success "Nginx 已安装: ${ver}"
         progress 100 "Nginx 已安装"
         exit 0
     fi
-    
+
     progress 5 "准备安装环境..."
-    clean_mysql_repo
-    update_sources
-    
-    # 添加 Nginx 官方仓库（获取最新版本）
-    progress 25 "配置 Nginx 仓库..."
+    clean_repo "nginx"
+    install_deps
+
+    # 添加 Nginx 官方仓库
+    progress 20 "配置 Nginx 仓库..."
     log_info "添加 Nginx 官方仓库..."
-    
-    apt-get install -y -qq curl gnupg2 ca-certificates lsb-release 2>&1 | tail -1
-    
-    # 导入 Nginx 签名密钥
-    curl -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o /usr/share/keyrings/nginx-archive-keyring.gpg 2>/dev/null || true
-    
+
+    local codename
+    codename=$(get_codename)
+
+    # 导入签名密钥
+    curl -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor --yes -o /usr/share/keyrings/nginx-archive-keyring.gpg 2>/dev/null || true
+
+    # 检查密钥是否导入成功
+    if [ ! -f /usr/share/keyrings/nginx-archive-keyring.gpg ]; then
+        log_error "导入 Nginx 签名密钥失败"
+        # 尝试备用方式
+        wget -qO- https://nginx.org/keys/nginx_signing.key | apt-key add - 2>/dev/null || true
+    fi
+
     # 添加仓库
-    echo "deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg] http://nginx.org/packages/ubuntu $(lsb_release -cs) nginx" > /etc/apt/sources.list.d/nginx.list
-    
-    apt-get update -qq 2>&1 | tail -1
-    
-    # 安装指定版本或最新版本
+    echo "deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg] http://nginx.org/packages/ubuntu ${codename} nginx" > /etc/apt/sources.list.d/nginx.list
+
+    update_sources
+
+    # 安装 Nginx
     progress 40 "正在安装 Nginx..."
     if [ -n "$VERSION" ] && [ "$VERSION" != "latest" ]; then
-        log_info "安装 Nginx $VERSION..."
-        apt-get install -y -qq nginx=$VERSION* 2>&1 | while read -r line; do
-            echo "DETAIL:$line"
-        done
+        log_info "安装 Nginx ${VERSION}..."
+        # 查询可用版本
+        local avail_ver
+        avail_ver=$(apt-cache madison nginx | grep "$VERSION" | head -1 | awk '{print $3}')
+        if [ -n "$avail_ver" ]; then
+            apt-get install -y -qq "nginx=${avail_ver}" 2>&1 | while IFS= read -r line; do
+                log_detail "$line"
+            done
+        else
+            log_error "未找到 Nginx ${VERSION}，安装最新版本"
+            apt-get install -y -qq nginx 2>&1 | while IFS= read -r line; do
+                log_detail "$line"
+            done
+        fi
     else
         log_info "安装最新版 Nginx..."
-        apt-get install -y -qq nginx 2>&1 | while read -r line; do
-            echo "DETAIL:$line"
+        apt-get install -y -qq nginx 2>&1 | while IFS= read -r line; do
+            log_detail "$line"
         done
     fi
-    
+
     progress 70 "正在配置 Nginx 服务..."
     systemctl enable nginx 2>/dev/null || true
     systemctl start nginx 2>/dev/null || true
-    
+
     progress 90 "正在验证安装..."
     sleep 1
-    
-    if systemctl is-active --quiet nginx; then
-        NGINX_VER=$(nginx -v 2>&1 | grep -oP '[\d.]+')
-        log_success "Nginx 安装成功！版本: $NGINX_VER"
+
+    if is_running nginx; then
+        local ver
+        ver=$(nginx -v 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        log_success "Nginx 安装成功！版本: ${ver}"
         progress 100 "安装完成"
     else
-        log_error "Nginx 安装完成但未运行"
+        log_error "Nginx 安装完成但未运行，尝试手动启动: systemctl start nginx"
         progress 100 "安装完成（未启动）"
     fi
 }
@@ -117,95 +171,90 @@ install_nginx() {
 # ========== MySQL 安装 ==========
 install_mysql() {
     log_info "开始安装 MySQL..."
-    
-    if command -v mysql &> /dev/null; then
-        log_success "MySQL 已安装: $(mysql --version 2>&1)"
+
+    if is_installed mysql; then
+        local ver
+        ver=$(mysql --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        log_success "MySQL 已安装: ${ver}"
         progress 100 "MySQL 已安装"
         exit 0
     fi
-    
+
     progress 5 "清理旧的仓库配置..."
-    clean_mysql_repo
-    
-    # 添加 MySQL APT 仓库
+    clean_repo "mysql"
+
     progress 15 "配置 MySQL 仓库..."
-    log_info "添加 MySQL APT 仓库..."
-    
-    # 下载 MySQL APT 配置包
-    if [ -n "$VERSION" ] && [ "$VERSION" != "latest" ]; then
-        log_info "准备安装 MySQL $VERSION..."
-        # 根据版本选择不同的仓库配置
-        case "$VERSION" in
-            8.0*)
-                MYSQL_APT="mysql-apt-config_0.8.29-1_all.deb"
-                ;;
-            8.4*)
-                MYSQL_APT="mysql-apt-config_0.8.29-1_all.deb"
-                ;;
-            5.7*)
-                MYSQL_APT="mysql-apt-config_0.8.29-1_all.deb"
-                ;;
-            *)
-                MYSQL_APT="mysql-apt-config_0.8.29-1_all.deb"
-                ;;
-        esac
-    else
-        MYSQL_APT="mysql-apt-config_0.8.29-1_all.deb"
-    fi
-    
-    # 下载并安装 APT 配置
+    log_info "配置 MySQL APT 仓库..."
+
+    # 下载并安装 MySQL APT 配置包
     cd /tmp
-    wget -q "https://dev.mysql.com/get/$MYSQL_APT" -O mysql-apt-config.deb 2>/dev/null || true
-    if [ -f mysql-apt-config.deb ]; then
-        DEBIAN_FRONTEND=noninteractive dpkg -i mysql-apt-config.deb 2>/dev/null || true
+    local apt_config_url="https://dev.mysql.com/get/mysql-apt-config_0.8.29-1_all.deb"
+    if wget -q "$apt_config_url" -O mysql-apt-config.deb 2>/dev/null; then
+        export DEBIAN_FRONTEND=noninteractive
+        dpkg -i mysql-apt-config.deb 2>/dev/null || true
         rm -f mysql-apt-config.deb
+    else
+        log_info "跳过 MySQL APT 配置，使用系统仓库"
     fi
-    
+
     update_sources
-    
+
     # 安装 MySQL
     progress 35 "正在安装 MySQL Server..."
     log_info "安装 MySQL（这可能需要几分钟）..."
-    
+
     export DEBIAN_FRONTEND=noninteractive
     if [ -n "$VERSION" ] && [ "$VERSION" != "latest" ]; then
-        log_info "安装 MySQL $VERSION..."
-        apt-get install -y -qq mysql-server=$VERSION* mysql-client=$VERSION* 2>&1 | while read -r line; do
-            echo "DETAIL:$line"
-        done
+        log_info "尝试安装 MySQL ${VERSION}..."
+        # 查询可用版本
+        local avail_ver
+        avail_ver=$(apt-cache madison mysql-server | grep "$VERSION" | head -1 | awk '{print $3}')
+        if [ -n "$avail_ver" ]; then
+            apt-get install -y -qq "mysql-server=${avail_ver}" 2>&1 | while IFS= read -r line; do
+                log_detail "$line"
+            done
+        else
+            log_error "未找到 MySQL ${VERSION}，安装系统默认版本"
+            apt-get install -y -qq mysql-server 2>&1 | while IFS= read -r line; do
+                log_detail "$line"
+            done
+        fi
     else
-        apt-get install -y -qq mysql-server 2>&1 | while read -r line; do
-            echo "DETAIL:$line"
+        apt-get install -y -qq mysql-server 2>&1 | while IFS= read -r line; do
+            log_detail "$line"
         done
     fi
-    
+
     progress 65 "正在启动 MySQL 服务..."
     systemctl enable mysql 2>/dev/null || true
     systemctl start mysql 2>/dev/null || true
-    sleep 2
-    
+    sleep 3
+
     progress 80 "正在配置安全设置..."
     if [ -n "$ROOT_PASS" ]; then
         log_info "设置 root 密码..."
-        mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${ROOT_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || true
+        mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${ROOT_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || \
+        mysql -u root --skip-password -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${ROOT_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || \
+        log_info "密码设置跳过（可能已设置）"
     fi
-    
-    # 安全配置
-    mysql -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null || true
-    mysql -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null || true
-    mysql -e "DROP DATABASE IF EXISTS test;" 2>/dev/null || true
-    mysql -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" 2>/dev/null || true
-    mysql -e "FLUSH PRIVILEGES;" 2>/dev/null || true
-    
+
+    # 安全配置（忽略错误）
+    mysql -u root -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null || true
+    mysql -u root -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null || true
+    mysql -u root -e "DROP DATABASE IF EXISTS test;" 2>/dev/null || true
+    mysql -u root -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" 2>/dev/null || true
+    mysql -u root -e "FLUSH PRIVILEGES;" 2>/dev/null || true
+
     progress 95 "正在验证安装..."
     sleep 1
-    
-    if systemctl is-active --quiet mysql; then
-        MYSQL_VER=$(mysql --version 2>&1 | grep -oP 'Ver [\d.]+' | cut -d' ' -f2)
-        log_success "MySQL 安装成功！版本: $MYSQL_VER"
+
+    if is_running mysql; then
+        local ver
+        ver=$(mysql --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        log_success "MySQL 安装成功！版本: ${ver}"
         progress 100 "安装完成"
     else
-        log_error "MySQL 安装完成但未运行"
+        log_error "MySQL 安装完成但未运行，尝试手动启动: systemctl start mysql"
         progress 100 "安装完成（未启动）"
     fi
 }
@@ -213,52 +262,64 @@ install_mysql() {
 # ========== PostgreSQL 安装 ==========
 install_postgresql() {
     log_info "开始安装 PostgreSQL..."
-    
-    if command -v psql &> /dev/null; then
-        log_success "PostgreSQL 已安装: $(psql --version 2>&1)"
+
+    if is_installed psql; then
+        local ver
+        ver=$(psql --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        log_success "PostgreSQL 已安装: ${ver}"
         progress 100 "PostgreSQL 已安装"
         exit 0
     fi
-    
+
     progress 5 "准备安装环境..."
-    clean_mysql_repo
-    
-    # 添加 PostgreSQL 官方仓库
+    clean_repo "postgresql"
+    install_deps
+
     progress 15 "配置 PostgreSQL 仓库..."
     log_info "添加 PostgreSQL 官方仓库..."
-    
-    # 导入 PostgreSQL 签名密钥
-    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql-archive-keyring.gpg 2>/dev/null || true
-    
-    # 添加仓库
+
+    local codename
+    codename=$(get_codename)
+
+    # 导入签名密钥
+    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor --yes -o /usr/share/keyrings/postgresql-archive-keyring.gpg 2>/dev/null || true
+
+    # 确定主版本号
+    local pg_major="16"
     if [ -n "$VERSION" ] && [ "$VERSION" != "latest" ]; then
-        PG_MAJOR=$(echo "$VERSION" | cut -d. -f1)
-        log_info "准备安装 PostgreSQL $VERSION..."
-    else
-        PG_MAJOR="16"  # 默认最新稳定版
+        pg_major=$(echo "$VERSION" | cut -d. -f1)
+        log_info "准备安装 PostgreSQL ${pg_major}..."
     fi
-    
-    echo "deb [signed-by=/usr/share/keyrings/postgresql-archive-keyring.gpg] http://apt.postgresql.org/pub/repos/ubuntu $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
-    
+
+    # 添加仓库
+    echo "deb [signed-by=/usr/share/keyrings/postgresql-archive-keyring.gpg] http://apt.postgresql.org/pub/repos/ubuntu ${codename}-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+
     update_sources
-    
+
     progress 35 "正在安装 PostgreSQL..."
-    log_info "安装 PostgreSQL $PG_MAJOR..."
-    
-    apt-get install -y -qq postgresql-$PG_MAJOR postgresql-contrib-$PG_MAJOR 2>&1 | while read -r line; do
-        echo "DETAIL:$line"
+    log_info "安装 PostgreSQL ${pg_major}..."
+
+    apt-get install -y -qq "postgresql-${pg_major}" "postgresql-contrib-${pg_major}" 2>&1 | while IFS= read -r line; do
+        log_detail "$line"
     done
-    
+
     progress 70 "正在配置 PostgreSQL..."
-    systemctl enable postgresql 2>/dev/null || true
-    systemctl start postgresql 2>/dev/null || true
+    # PostgreSQL 服务名格式: postgresql@版本号-main
+    local pg_service="postgresql"
+    if systemctl list-unit-files | grep -q "postgresql@${pg_major}"; then
+        pg_service="postgresql@${pg_major}-main"
+    fi
+
+    systemctl enable "${pg_service}" 2>/dev/null || systemctl enable postgresql 2>/dev/null || true
+    systemctl start "${pg_service}" 2>/dev/null || systemctl start postgresql 2>/dev/null || true
     sleep 2
-    
+
     progress 95 "正在验证安装..."
-    
-    if systemctl is-active --quiet postgresql; then
-        PG_VER=$(psql --version 2>&1 | grep -oP '[\d.]+' | head -1)
-        log_success "PostgreSQL 安装成功！版本: $PG_VER"
+
+    if is_running postgresql || systemctl is-active --quiet "postgresql@${pg_major}-main" 2>/dev/null; then
+        local ver
+        ver=$(psql --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        log_success "PostgreSQL 安装成功！版本: ${ver}"
         progress 100 "安装完成"
     else
         log_error "PostgreSQL 安装完成但未运行"
@@ -269,51 +330,65 @@ install_postgresql() {
 # ========== Redis 安装 ==========
 install_redis() {
     log_info "开始安装 Redis..."
-    
-    if command -v redis-server &> /dev/null; then
-        log_success "Redis 已安装: $(redis-server --version 2>&1)"
+
+    if is_installed redis-server; then
+        local ver
+        ver=$(redis-server --version 2>&1 | grep -oE 'v=[0-9]+\.[0-9]+\.[0-9]+' | cut -d= -f2)
+        log_success "Redis 已安装: ${ver}"
         progress 100 "Redis 已安装"
         exit 0
     fi
-    
+
     progress 5 "准备安装环境..."
-    clean_mysql_repo
-    
-    # 添加 Redis 官方仓库
+    clean_repo "redis"
+    install_deps
+
     progress 15 "配置 Redis 仓库..."
     log_info "添加 Redis 官方仓库..."
-    
-    # 导入 Redis 签名密钥
-    curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg 2>/dev/null || true
-    
+
+    local codename
+    codename=$(get_codename)
+
+    # 导入签名密钥
+    curl -fsSL https://packages.redis.io/gpg | gpg --dearmor --yes -o /usr/share/keyrings/redis-archive-keyring.gpg 2>/dev/null || true
+
     # 添加仓库
-    echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" > /etc/apt/sources.list.d/redis.list
-    
+    echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb ${codename} main" > /etc/apt/sources.list.d/redis.list
+
     update_sources
-    
+
     progress 40 "正在安装 Redis..."
     if [ -n "$VERSION" ] && [ "$VERSION" != "latest" ]; then
-        log_info "安装 Redis $VERSION..."
-        apt-get install -y -qq redis-server=$VERSION* 2>&1 | while read -r line; do
-            echo "DETAIL:$line"
-        done
+        log_info "尝试安装 Redis ${VERSION}..."
+        local avail_ver
+        avail_ver=$(apt-cache madison redis-server | grep "$VERSION" | head -1 | awk '{print $3}')
+        if [ -n "$avail_ver" ]; then
+            apt-get install -y -qq "redis-server=${avail_ver}" 2>&1 | while IFS= read -r line; do
+                log_detail "$line"
+            done
+        else
+            log_error "未找到 Redis ${VERSION}，安装系统默认版本"
+            apt-get install -y -qq redis-server 2>&1 | while IFS= read -r line; do
+                log_detail "$line"
+            done
+        fi
     else
-        log_info "安装最新版 Redis..."
-        apt-get install -y -qq redis-server 2>&1 | while read -r line; do
-            echo "DETAIL:$line"
+        apt-get install -y -qq redis-server 2>&1 | while IFS= read -r line; do
+            log_detail "$line"
         done
     fi
-    
+
     progress 75 "正在配置 Redis..."
     systemctl enable redis-server 2>/dev/null || true
     systemctl start redis-server 2>/dev/null || true
     sleep 1
-    
+
     progress 95 "正在验证安装..."
-    
-    if systemctl is-active --quiet redis-server; then
-        REDIS_VER=$(redis-server --version 2>&1 | grep -oP 'v=[\d.]+' | cut -d= -f2)
-        log_success "Redis 安装成功！版本: $REDIS_VER"
+
+    if is_running redis-server; then
+        local ver
+        ver=$(redis-server --version 2>&1 | grep -oE 'v=[0-9]+\.[0-9]+\.[0-9]+' | cut -d= -f2)
+        log_success "Redis 安装成功！版本: ${ver}"
         progress 100 "安装完成"
     else
         log_error "Redis 安装完成但未运行"
@@ -323,7 +398,8 @@ install_redis() {
 
 # ========== 获取可用版本 ==========
 get_available_versions() {
-    case "$SERVICE" in
+    local service="$1"
+    case "$service" in
         nginx)
             echo "=== Nginx 可用版本 ==="
             apt-cache madison nginx 2>/dev/null | awk '{print $3}' | head -10
@@ -341,20 +417,35 @@ get_available_versions() {
             apt-cache madison redis-server 2>/dev/null | awk '{print $3}' | head -10
             ;;
         *)
-            log_error "未知的服务: $SERVICE"
+            log_error "未知的服务: ${service}"
+            log_info "支持的服务: nginx, mysql, postgresql, redis"
+            exit 1
             ;;
     esac
 }
 
-# 主程序
+# ========== 主程序 ==========
+
+# 检查参数
+if [ -z "$SERVICE" ]; then
+    log_error "缺少服务名称参数"
+    echo "用法: $0 <service> [version] [root_pass]"
+    echo "服务: nginx, mysql, postgresql, redis"
+    echo "示例: $0 nginx 1.24.0"
+    echo "      $0 mysql latest mypassword"
+    echo "      $0 nginx versions  # 列出可用版本"
+    exit 1
+fi
+
 check_root
 
-# 如果第二个参数是 "versions"，则显示可用版本
+# 处理版本查询
 if [ "$VERSION" = "versions" ]; then
-    get_available_versions
+    get_available_versions "$SERVICE"
     exit 0
 fi
 
+# 安装服务
 case "$SERVICE" in
     nginx)
         install_nginx
@@ -369,8 +460,10 @@ case "$SERVICE" in
         install_redis
         ;;
     *)
-        log_error "未知的服务: $SERVICE"
+        log_error "未知的服务: ${SERVICE}"
         log_info "支持的服务: nginx, mysql, postgresql, redis"
         exit 1
         ;;
 esac
+
+exit 0
