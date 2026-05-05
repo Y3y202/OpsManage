@@ -257,6 +257,38 @@
       </div>
     </el-dialog>
 
+    <!-- 版本选择对话框 -->
+    <el-dialog v-model="versionDialogVisible" title="选择安装版本" width="400px" destroy-on-close>
+      <div class="version-selector">
+        <div class="service-info">
+          <div class="service-icon" :class="installingService">
+            <el-icon :size="20"><Promotion /></el-icon>
+          </div>
+          <span class="service-name">{{ getServiceName(installingService) }}</span>
+        </div>
+        <el-divider />
+        <div class="version-label">选择版本：</div>
+        <el-select v-model="selectedVersion" placeholder="选择版本" style="width: 100%">
+          <el-option
+            v-for="v in availableVersions"
+            :key="v"
+            :label="v === 'latest' ? '最新版本 (推荐)' : v"
+            :value="v"
+          />
+        </el-select>
+        <div class="version-tip" v-if="selectedVersion === 'latest'">
+          <el-icon><InfoFilled /></el-icon>
+          <span>将安装官方最新稳定版本</span>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="versionDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="startInstallWithVersion" :loading="installing">
+          <el-icon><Download /></el-icon> 开始安装
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 安装进度对话框 -->
     <el-dialog v-model="progressDialogVisible" title="安装进度" width="650px" :close-on-click-modal="false" :close-on-press-escape="false" destroy-on-close @close="closeProgressDialog">
       <div class="install-progress">
@@ -346,7 +378,7 @@ import {
   Monitor, Download, VideoPlay, VideoPause, Refresh, RefreshRight,
   CircleCheck, Lock, Unlock, Connection, Plus, Upload,
   Edit, Document, List, Delete, Link, Promotion,
-  Coin, DataLine, TrendCharts
+  Coin, DataLine, TrendCharts, InfoFilled
 } from '@element-plus/icons-vue'
 import {
   getNginxStatus, getNginxOverview, nginxService,
@@ -355,7 +387,7 @@ import {
   nginxSiteAction, manageNginxSSL, getNginxSiteConfig, saveNginxSiteConfig,
   getNginxSiteLogs
 } from '@/api/nginx'
-import { installNginx, getTaskProgress } from '@/api/installer'
+import { installNginx, getTaskProgress, getAvailableVersions } from '@/api/installer'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -375,6 +407,12 @@ const currentTaskId = ref('')
 const logContainer = ref<HTMLElement | null>(null)
 let progressTimer: any = null
 let eventSource: EventSource | null = null
+
+// 版本选择
+const versionDialogVisible = ref(false)
+const availableVersions = ref<string[]>([])
+const selectedVersion = ref('latest')
+const installingService = ref('')
 
 // 站点对话框
 const siteDialogVisible = ref(false)
@@ -435,9 +473,27 @@ async function loadData() {
 }
 
 async function handleInstallNginx() {
-  installing.value = true
+  installingService.value = 'nginx'
+  selectedVersion.value = 'latest'
+  availableVersions.value = ['latest']
+  versionDialogVisible.value = true
+  
+  // 加载可用版本
   try {
-    const res: any = await installNginx()
+    const res: any = await getAvailableVersions('nginx')
+    availableVersions.value = res.data || ['latest']
+  } catch (e) {
+    // 使用默认版本列表
+    availableVersions.value = ['latest', '1.26.0', '1.24.0', '1.22.0']
+  }
+}
+
+async function startInstallWithVersion() {
+  versionDialogVisible.value = false
+  installing.value = true
+  
+  try {
+    const res: any = await installNginx(selectedVersion.value)
     currentTaskId.value = res.data?.task_id
     installService.value = 'nginx'
     installProgress.value = 0
@@ -446,7 +502,6 @@ async function handleInstallNginx() {
     installLogs.value = []
     progressDialogVisible.value = true
     
-    // 使用 SSE 监听进度
     connectSSE(currentTaskId.value)
   } catch (e: any) {
     ElMessage.error(e.message || '安装失败')
@@ -1014,6 +1069,53 @@ async function loadLogs() {
         .step-dot { background: var(--el-color-success); }
         .step-label { color: var(--el-color-success); }
       }
+    }
+  }
+}
+
+.version-selector {
+  .service-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    
+    .service-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      
+      &.nginx { background: linear-gradient(135deg, #009639, #00d94e); }
+      &.mysql { background: linear-gradient(135deg, #00758f, #f29111); }
+      &.postgresql { background: linear-gradient(135deg, #336791, #6699cc); }
+      &.redis { background: linear-gradient(135deg, #dc382d, #ff6b6b); }
+    }
+    
+    .service-name {
+      font-size: 16px;
+      font-weight: 600;
+    }
+  }
+  
+  .version-label {
+    font-size: 14px;
+    color: var(--el-text-color-regular);
+    margin-bottom: 8px;
+  }
+  
+  .version-tip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+    
+    .el-icon {
+      color: var(--el-color-info);
     }
   }
 }

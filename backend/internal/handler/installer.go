@@ -189,9 +189,7 @@ func escapeJSON(s string) string {
 func runInstallScript(taskID, service string, args ...string) {
 	scriptPath := "./scripts/install.sh"
 
-	// 检查脚本是否存在
 	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-		// 尝试绝对路径
 		scriptPath = "/item/OpsManage/backend/scripts/install.sh"
 		if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
 			setProgress(taskID, "failed", 0, "安装脚本不存在")
@@ -199,24 +197,20 @@ func runInstallScript(taskID, service string, args ...string) {
 		}
 	}
 
-	// 设置脚本可执行
 	os.Chmod(scriptPath, 0755)
 
-	// 构建命令
 	cmdArgs := []string{service}
 	cmdArgs = append(cmdArgs, args...)
 	cmd := exec.Command(scriptPath, cmdArgs...)
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 
-	// 创建管道获取输出
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		setProgress(taskID, "failed", 0, "创建管道失败: "+err.Error())
 		return
 	}
-	cmd.Stderr = cmd.Stdout // 合并 stderr 到 stdout
+	cmd.Stderr = cmd.Stdout
 
-	// 启动命令
 	if err := cmd.Start(); err != nil {
 		setProgress(taskID, "failed", 0, "启动安装脚本失败: "+err.Error())
 		return
@@ -224,14 +218,11 @@ func runInstallScript(taskID, service string, args ...string) {
 
 	setProgress(taskID, "running", 5, "开始安装...")
 
-	// 实时读取输出
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		// 解析特殊格式的输出
 		if strings.HasPrefix(line, "PROGRESS:") {
-			// 格式: PROGRESS:百分比:消息
 			parts := strings.SplitN(line[9:], ":", 2)
 			if len(parts) == 2 {
 				progress := 0
@@ -245,7 +236,6 @@ func runInstallScript(taskID, service string, args ...string) {
 		} else if strings.HasPrefix(line, "SUCCESS:") {
 			addInstallLog(taskID, "✅ "+line[8:])
 		} else if strings.HasPrefix(line, "DETAIL:") {
-			// 详细的安装输出
 			detail := line[7:]
 			if detail != "" && !strings.HasPrefix(detail, "Get:") && !strings.HasPrefix(detail, "Hit:") {
 				addInstallLog(taskID, detail)
@@ -255,12 +245,11 @@ func runInstallScript(taskID, service string, args ...string) {
 		}
 	}
 
-	// 等待命令完成
 	err = cmd.Wait()
 
 	if err != nil {
 		setProgress(taskID, "failed", 100, "安装失败: "+err.Error())
-		relatedLog(taskID, service)
+		addLog("error", "installer", service+" 安装失败")
 	} else {
 		setProgress(taskID, "success", 100, service+" 安装成功！")
 		updateDBInstance(service)
@@ -296,6 +285,50 @@ func updateDBInstance(service string) {
 
 // ========== 安装入口 ==========
 
+// GetAvailableVersions 获取可用版本列表
+func GetAvailableVersions(c *gin.Context) {
+	serviceType := c.Param("type")
+
+	scriptPath := "./scripts/install.sh"
+	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		scriptPath = "/item/OpsManage/backend/scripts/install.sh"
+	}
+
+	cmd := exec.Command(scriptPath, serviceType, "versions")
+	output, err := cmd.Output()
+	if err != nil {
+		success(c, []string{"latest"})
+		return
+	}
+
+	versions := []string{"latest"}
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "===") && !strings.HasPrefix(line, "INFO:") {
+			// 去掉版本号后的后缀（如 -1ubuntu1）
+			parts := strings.Split(line, "-")
+			if len(parts) > 0 {
+				version := parts[0]
+				if !contains(versions, version) {
+					versions = append(versions, version)
+				}
+			}
+		}
+	}
+
+	success(c, versions)
+}
+
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
 // NginxInstall 安装 Nginx
 func NginxInstall(c *gin.Context) {
 	if isNginxInstalled() {
@@ -303,10 +336,20 @@ func NginxInstall(c *gin.Context) {
 		return
 	}
 
+	var req struct {
+		Version string `json:"version"`
+	}
+	c.ShouldBindJSON(&req)
+
 	taskID := fmt.Sprintf("nginx-%d", time.Now().Unix())
 	createProgress(taskID, "nginx")
 
-	go runInstallScript(taskID, "nginx")
+	args := []string{}
+	if req.Version != "" && req.Version != "latest" {
+		args = append(args, req.Version)
+	}
+
+	go runInstallScript(taskID, "nginx", args...)
 
 	success(c, gin.H{"task_id": taskID, "message": "正在安装 Nginx..."})
 }
@@ -319,6 +362,7 @@ func MySQLInstall(c *gin.Context) {
 	}
 
 	var req struct {
+		Version string `json:"version"`
 		RootPass string `json:"root_pass"`
 	}
 	c.ShouldBindJSON(&req)
@@ -327,6 +371,9 @@ func MySQLInstall(c *gin.Context) {
 	createProgress(taskID, "mysql")
 
 	args := []string{}
+	if req.Version != "" && req.Version != "latest" {
+		args = append(args, req.Version)
+	}
 	if req.RootPass != "" {
 		args = append(args, req.RootPass)
 	}
@@ -343,10 +390,20 @@ func PostgreSQLInstall(c *gin.Context) {
 		return
 	}
 
+	var req struct {
+		Version string `json:"version"`
+	}
+	c.ShouldBindJSON(&req)
+
 	taskID := fmt.Sprintf("pg-%d", time.Now().Unix())
 	createProgress(taskID, "postgresql")
 
-	go runInstallScript(taskID, "postgresql")
+	args := []string{}
+	if req.Version != "" && req.Version != "latest" {
+		args = append(args, req.Version)
+	}
+
+	go runInstallScript(taskID, "postgresql", args...)
 
 	success(c, gin.H{"task_id": taskID, "message": "正在安装 PostgreSQL..."})
 }
@@ -358,10 +415,20 @@ func RedisInstall(c *gin.Context) {
 		return
 	}
 
+	var req struct {
+		Version string `json:"version"`
+	}
+	c.ShouldBindJSON(&req)
+
 	taskID := fmt.Sprintf("redis-%d", time.Now().Unix())
 	createProgress(taskID, "redis")
 
-	go runInstallScript(taskID, "redis")
+	args := []string{}
+	if req.Version != "" && req.Version != "latest" {
+		args = append(args, req.Version)
+	}
+
+	go runInstallScript(taskID, "redis", args...)
 
 	success(c, gin.H{"task_id": taskID, "message": "正在安装 Redis..."})
 }

@@ -153,6 +153,7 @@ func NewServer(cfg *config.Config) *http.Server {
 		{
 			installer.GET("/tasks", handler.GetActiveTasks)
 			installer.GET("/tasks/:taskId", handler.GetTaskProgress)
+			installer.GET("/versions/:type", handler.GetAvailableVersions)
 			installer.POST("/install/:type", handler.InstallService)
 		}
 
