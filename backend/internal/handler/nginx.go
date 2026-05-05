@@ -24,46 +24,23 @@ import (
 // NginxStatus Nginx 服务状态
 func NginxStatus(c *gin.Context) {
 	info := map[string]interface{}{
-		"installed":  isNginxInstalled(),
-		"running":    isNginxRunning(),
-		"version":    getNginxVersion(),
+		"installed":   isNginxInstalled(),
+		"running":     isNginxRunning(),
+		"version":     getNginxVersion(),
 		"config_path": "/etc/nginx/nginx.conf",
-		"conf_d":     "/etc/nginx/conf.d",
-		"sites_path": "/etc/nginx/sites-enabled",
+		"conf_d":      "/etc/nginx/conf.d",
+		"sites_path":  "/etc/nginx/sites-enabled",
 	}
-	// 获取已配置的站点数
 	var siteCount int64
 	config.DB.Model(&model.NginxSite{}).Count(&siteCount)
 	info["site_count"] = siteCount
 	success(c, info)
 }
 
-// NginxInstall 安装 Nginx
-func NginxInstall(c *gin.Context) {
-	if isNginxInstalled() {
-		fail(c, 400, "Nginx 已安装")
-		return
-	}
-	go func() {
-		addLog("info", "nginx", "开始安装 Nginx...")
-		cmd := exec.Command("bash", "-c", "apt-get update -qq && apt-get install -y -qq nginx")
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			addLog("error", "nginx", "安装 Nginx 失败: "+string(output))
-			return
-		}
-		// 启动 Nginx
-		exec.Command("systemctl", "enable", "nginx").Run()
-		exec.Command("systemctl", "start", "nginx").Run()
-		addLog("info", "nginx", "Nginx 安装成功")
-	}()
-	success(c, gin.H{"message": "正在安装 Nginx..."})
-}
-
 // NginxService 操作 Nginx 服务
 func NginxService(c *gin.Context) {
 	var req struct {
-		Action string `json:"action" binding:"required"` // start / stop / restart / reload
+		Action string `json:"action" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, 400, "参数错误")
@@ -133,8 +110,8 @@ type CreateNginxSiteReq struct {
 	Domain     string `json:"domain" binding:"required"`
 	Root       string `json:"root" binding:"required"`
 	Port       int    `json:"port"`
-	ProxyType  string `json:"proxy_type"` // static / proxy / php
-	ProxyPass  string `json:"proxy_pass"` // 当 proxy_type=proxy 时的目标地址
+	ProxyType  string `json:"proxy_type"`
+	ProxyPass  string `json:"proxy_pass"`
 	PHPVersion string `json:"php_version"`
 	Gzip       *bool  `json:"gzip"`
 	Remark     string `json:"remark"`
@@ -180,7 +157,6 @@ func CreateNginxSite(c *gin.Context) {
 		return
 	}
 
-	// 生成 Nginx 配置
 	confPath := generateSiteNginxConf(&site)
 	site.ConfigFile = confPath
 	content, _ := os.ReadFile(confPath)
@@ -190,10 +166,8 @@ func CreateNginxSite(c *gin.Context) {
 		"config_content": site.ConfigContent,
 	})
 
-	// 测试并重载
 	testCmd := exec.Command("nginx", "-t")
 	if err := testCmd.Run(); err != nil {
-		// 配置测试失败，回滚
 		os.Remove(confPath)
 		config.DB.Delete(&site)
 		fail(c, 400, "Nginx 配置测试失败，请检查域名和路径设置")
@@ -213,7 +187,6 @@ func GetNginxSite(c *gin.Context) {
 		fail(c, 404, "未找到")
 		return
 	}
-	// 读取实际配置文件内容
 	if site.ConfigFile != "" {
 		content, err := os.ReadFile(site.ConfigFile)
 		if err == nil {
@@ -241,7 +214,6 @@ func UpdateNginxSite(c *gin.Context) {
 	config.DB.Model(&site).Updates(req)
 	config.DB.First(&site, id)
 
-	// 重新生成配置
 	confPath := generateSiteNginxConf(&site)
 	content, _ := os.ReadFile(confPath)
 	config.DB.Model(&site).Updates(map[string]interface{}{
@@ -284,11 +256,9 @@ func NginxSiteAction(c *gin.Context) {
 	switch action {
 	case "enable":
 		config.DB.Model(&site).Update("status", "running")
-		// 重新生成配置文件
 		generateSiteNginxConf(&site)
 	case "disable":
 		config.DB.Model(&site).Update("status", "stopped")
-		// 移除配置文件
 		if site.ConfigFile != "" {
 			os.Remove(site.ConfigFile)
 		}
@@ -310,9 +280,9 @@ func NginxSiteSSL(c *gin.Context) {
 	}
 
 	var req struct {
-		Action   string `json:"action" binding:"required"` // enable / disable / renew
+		Action   string `json:"action" binding:"required"`
 		Email    string `json:"email"`
-		CertPath string `json:"cert_path"` // 手动指定证书路径
+		CertPath string `json:"cert_path"`
 		KeyPath  string `json:"key_path"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -323,14 +293,12 @@ func NginxSiteSSL(c *gin.Context) {
 	switch req.Action {
 	case "enable":
 		if req.CertPath != "" && req.KeyPath != "" {
-			// 手动指定证书
 			config.DB.Model(&site).Updates(map[string]interface{}{
 				"ssl":      true,
 				"ssl_cert": req.CertPath,
 				"ssl_key":  req.KeyPath,
 			})
 		} else {
-			// 使用 acme.sh 自动申请
 			go func() {
 				acmeInstallAndCert(&site, req.Email)
 			}()
@@ -375,7 +343,6 @@ func NginxSiteConfig(c *gin.Context) {
 	}
 
 	if c.Request.Method == "GET" {
-		// 读取配置
 		if site.ConfigFile != "" {
 			content, err := os.ReadFile(site.ConfigFile)
 			if err == nil {
@@ -386,7 +353,6 @@ func NginxSiteConfig(c *gin.Context) {
 		return
 	}
 
-	// POST - 保存配置
 	var req struct {
 		Content string `json:"content" binding:"required"`
 	}
@@ -399,24 +365,20 @@ func NginxSiteConfig(c *gin.Context) {
 		site.ConfigFile = fmt.Sprintf("/etc/nginx/conf.d/%s.conf", site.Domain)
 	}
 
-	// 先备份
 	backupPath := site.ConfigFile + ".bak." + time.Now().Format("20060102150405")
 	if _, err := os.Stat(site.ConfigFile); err == nil {
 		data, _ := os.ReadFile(site.ConfigFile)
 		os.WriteFile(backupPath, data, 0644)
 	}
 
-	// 写入新配置
 	if err := os.WriteFile(site.ConfigFile, []byte(req.Content), 0644); err != nil {
 		fail(c, 500, "写入配置文件失败")
 		return
 	}
 
-	// 测试配置
 	cmd := exec.Command("nginx", "-t")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		// 回滚
 		if _, err := os.Stat(backupPath); err == nil {
 			data, _ := os.ReadFile(backupPath)
 			os.WriteFile(site.ConfigFile, data, 0644)
@@ -434,7 +396,7 @@ func NginxSiteConfig(c *gin.Context) {
 // NginxSiteLogs 查看站点日志
 func NginxSiteLogs(c *gin.Context) {
 	id := c.Param("id")
-	logType := c.DefaultQuery("type", "access") // access / error
+	logType := c.DefaultQuery("type", "access")
 	linesStr := c.DefaultQuery("lines", "100")
 	lines, _ := strconv.Atoi(linesStr)
 
@@ -456,7 +418,6 @@ func NginxSiteLogs(c *gin.Context) {
 		return
 	}
 
-	// 读取最后 N 行
 	cmd := exec.Command("tail", "-n", strconv.Itoa(lines), logPath)
 	output, err := cmd.Output()
 	if err != nil {
@@ -502,7 +463,6 @@ func NginxSiteLogStream(c *gin.Context) {
 		}
 	}()
 
-	// 等待客户端断开
 	for {
 		_, _, err := ws.ReadMessage()
 		if err != nil {
@@ -515,9 +475,9 @@ func NginxSiteLogStream(c *gin.Context) {
 // NginxStatusOverview Nginx 状态概览
 func NginxStatusOverview(c *gin.Context) {
 	overview := map[string]interface{}{
-		"installed":    isNginxInstalled(),
-		"running":      isNginxRunning(),
-		"version":      getNginxVersion(),
+		"installed":     isNginxInstalled(),
+		"running":       isNginxRunning(),
+		"version":       getNginxVersion(),
 		"active_conns":  getNginxActiveConns(),
 	}
 	var siteCount, runningCount int64
@@ -526,7 +486,6 @@ func NginxStatusOverview(c *gin.Context) {
 	overview["total_sites"] = siteCount
 	overview["running_sites"] = runningCount
 
-	// SSL 站点数
 	var sslCount int64
 	config.DB.Model(&model.NginxSite{}).Where("ssl = ?", true).Count(&sslCount)
 	overview["ssl_sites"] = sslCount
@@ -553,7 +512,6 @@ func getNginxVersion() string {
 	if err != nil {
 		return ""
 	}
-	// 输出格式: nginx version: nginx/1.24.0
 	re := regexp.MustCompile(`nginx/([\d.]+)`)
 	matches := re.FindStringSubmatch(string(output))
 	if len(matches) > 1 {
@@ -569,7 +527,6 @@ func getNginxActiveConns() int {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	// Active connections: 1
 	re := regexp.MustCompile(`Active connections:\s*(\d+)`)
 	matches := re.FindStringSubmatch(string(body))
 	if len(matches) > 1 {
@@ -579,13 +536,11 @@ func getNginxActiveConns() int {
 	return 0
 }
 
-// generateSiteNginxConf 生成站点 Nginx 配置文件
 func generateSiteNginxConf(site *model.NginxSite) string {
 	confDir := "/etc/nginx/conf.d"
 	os.MkdirAll(confDir, 0755)
 	confPath := filepath.Join(confDir, fmt.Sprintf("%s.conf", site.Domain))
 
-	// 如果站点被禁用，不生成配置文件
 	if site.Status == "stopped" {
 		os.Remove(confPath)
 		return confPath
@@ -600,7 +555,6 @@ func generateSiteNginxConf(site *model.NginxSite) string {
 func buildNginxConfig(site *model.NginxSite) string {
 	var buf strings.Builder
 
-	// HTTP server
 	if site.SSL {
 		buf.WriteString(fmt.Sprintf("server {\n    listen %d;\n    server_name %s;\n    return 301 https://$host$request_uri;\n}\n\n", site.Port, site.Domain))
 		buf.WriteString(fmt.Sprintf("server {\n    listen 443 ssl http2;\n    server_name %s;\n", site.Domain))
@@ -612,12 +566,10 @@ func buildNginxConfig(site *model.NginxSite) string {
 		buf.WriteString(fmt.Sprintf("server {\n    listen %d;\n    server_name %s;\n\n", site.Port, site.Domain))
 	}
 
-	// Gzip
 	if site.Gzip {
 		buf.WriteString("    gzip on;\n    gzip_types text/plain text/css application/json application/javascript text/xml application/xml;\n    gzip_min_length 1024;\n\n")
 	}
 
-	// Location based on proxy type
 	switch site.ProxyType {
 	case "proxy":
 		buf.WriteString(fmt.Sprintf("    location / {\n        proxy_pass %s;\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection \"upgrade\";\n    }\n", site.ProxyPass))
@@ -625,12 +577,11 @@ func buildNginxConfig(site *model.NginxSite) string {
 		buf.WriteString(fmt.Sprintf("    root %s;\n    index index.php index.html;\n\n", site.Root))
 		buf.WriteString("    location / {\n        try_files $uri $uri/ /index.php?$query_string;\n    }\n\n")
 		buf.WriteString("    location ~ \\.php$ {\n        fastcgi_pass unix:/var/run/php/php-fpm.sock;\n        fastcgi_index index.php;\n        include fastcgi_params;\n        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n    }\n")
-	default: // static
+	default:
 		buf.WriteString(fmt.Sprintf("    root %s;\n    index index.html index.htm;\n\n", site.Root))
 		buf.WriteString("    location / {\n        try_files $uri $uri/ /index.html;\n    }\n")
 	}
 
-	// 日志
 	buf.WriteString(fmt.Sprintf("\n    access_log /var/log/nginx/%s_access.log;\n", site.Domain))
 	buf.WriteString(fmt.Sprintf("    error_log /var/log/nginx/%s_error.log;\n", site.Domain))
 	buf.WriteString("}\n")
@@ -638,20 +589,15 @@ func buildNginxConfig(site *model.NginxSite) string {
 	return buf.String()
 }
 
-// acmeInstallAndCert 使用 acme.sh 申请证书
 func acmeInstallAndCert(site *model.NginxSite, email string) {
 	addLog("info", "nginx", "开始申请 SSL 证书: "+site.Domain)
 
-	// 检查 acme.sh 是否安装
 	acmePath := os.Getenv("HOME") + "/.acme.sh/acme.sh"
 	if _, err := os.Stat(acmePath); os.IsNotExist(err) {
-		// 安装 acme.sh
-		cmd := exec.Command("bash", "-c", fmt.Sprintf(
-			"curl https://get.acme.sh | sh -s email=%s", email))
+		cmd := exec.Command("bash", "-c", fmt.Sprintf("curl https://get.acme.sh | sh -s email=%s", email))
 		cmd.Run()
 	}
 
-	// 申请证书
 	cmd := exec.Command(acmePath, "--issue", "-d", site.Domain, "--webroot", site.Root)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -659,16 +605,12 @@ func acmeInstallAndCert(site *model.NginxSite, email string) {
 		return
 	}
 
-	// 安装证书
 	certDir := fmt.Sprintf("/etc/nginx/ssl/%s", site.Domain)
 	os.MkdirAll(certDir, 0755)
 	certPath := filepath.Join(certDir, "fullchain.pem")
 	keyPath := filepath.Join(certDir, "privkey.pem")
 
-	cmd = exec.Command(acmePath, "--installcert", "-d", site.Domain,
-		"--cert-file", certPath,
-		"--key-file", keyPath,
-		"--reloadcmd", "systemctl reload nginx")
+	cmd = exec.Command(acmePath, "--installcert", "-d", site.Domain, "--cert-file", certPath, "--key-file", keyPath, "--reloadcmd", "systemctl reload nginx")
 	cmd.Run()
 
 	config.DB.Model(site).Updates(map[string]interface{}{
@@ -720,7 +662,6 @@ func NginxImportSites(c *gin.Context) {
 			continue
 		}
 
-		// 简单解析 server_name 和 root
 		conf := string(content)
 		domainRe := regexp.MustCompile(`server_name\s+([^;]+);`)
 		rootRe := regexp.MustCompile(`root\s+([^;]+);`)
@@ -738,7 +679,6 @@ func NginxImportSites(c *gin.Context) {
 			root = strings.TrimSpace(rootMatch[1])
 		}
 
-		// 检查是否已存在
 		var count int64
 		config.DB.Model(&model.NginxSite{}).Where("domain = ?", domain).Count(&count)
 		if count > 0 {
@@ -756,7 +696,6 @@ func NginxImportSites(c *gin.Context) {
 			ConfigFile: file,
 		}
 
-		// 检查 SSL
 		if strings.Contains(conf, "ssl_certificate") {
 			site.SSL = true
 			certRe := regexp.MustCompile(`ssl_certificate\s+([^;]+);`)
@@ -769,7 +708,6 @@ func NginxImportSites(c *gin.Context) {
 			}
 		}
 
-		// 检查反向代理
 		proxyRe := regexp.MustCompile(`proxy_pass\s+([^;]+);`)
 		if m := proxyRe.FindStringSubmatch(conf); len(m) > 1 {
 			site.ProxyType = "proxy"
@@ -793,7 +731,6 @@ func NginxSiteReload(c *gin.Context) {
 		return
 	}
 
-	// 重新生成配置
 	confPath := generateSiteNginxConf(&site)
 	content, _ := os.ReadFile(confPath)
 	config.DB.Model(&site).Updates(map[string]interface{}{

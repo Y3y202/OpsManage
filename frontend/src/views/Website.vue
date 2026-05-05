@@ -256,6 +256,51 @@
         <pre class="log-content">{{ logContent }}</pre>
       </div>
     </el-dialog>
+
+    <!-- 安装进度对话框 -->
+    <el-dialog v-model="progressDialogVisible" title="安装进度" width="500px" :close-on-click-modal="false" :close-on-press-escape="false" destroy-on-close @close="closeProgressDialog">
+      <div class="install-progress">
+        <div class="progress-header">
+          <el-icon class="progress-icon" :class="installStatus" :size="48">
+            <Loading v-if="installStatus === 'running'" />
+            <CircleCheck v-else-if="installStatus === 'success'" />
+            <CircleClose v-else-if="installStatus === 'failed'" />
+            <Clock v-else />
+          </el-icon>
+          <div class="progress-info">
+            <div class="progress-title">
+              {{ installStatus === 'running' ? '正在安装 Nginx...' : installStatus === 'success' ? '安装成功！' : installStatus === 'failed' ? '安装失败' : '等待中...' }}
+            </div>
+            <div class="progress-message">{{ installMessage }}</div>
+            <div class="progress-detail" v-if="installDetail">{{ installDetail }}</div>
+          </div>
+        </div>
+        <el-progress :percentage="installProgress" :status="installStatus === 'success' ? 'success' : installStatus === 'failed' ? 'exception' : undefined" :stroke-width="12" :show-text="true" style="margin: 20px 0;" />
+        <div class="progress-steps">
+          <div class="step" :class="{ active: installProgress >= 10, done: installProgress > 10 }">
+            <span class="step-dot"></span>
+            <span class="step-label">更新软件源</span>
+          </div>
+          <div class="step" :class="{ active: installProgress >= 40, done: installProgress > 40 }">
+            <span class="step-dot"></span>
+            <span class="step-label">安装 Nginx</span>
+          </div>
+          <div class="step" :class="{ active: installProgress >= 70, done: installProgress > 70 }">
+            <span class="step-dot"></span>
+            <span class="step-label">配置服务</span>
+          </div>
+          <div class="step" :class="{ active: installProgress >= 100, done: installProgress > 100 }">
+            <span class="step-dot"></span>
+            <span class="step-label">完成</span>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="closeProgressDialog" :disabled="installStatus === 'running'">
+          {{ installStatus === 'running' ? '安装中...' : '关闭' }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -265,15 +310,16 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Monitor, Download, VideoPlay, VideoPause, Refresh, RefreshRight,
   CircleCheck, Lock, Unlock, Connection, Plus, Upload,
-  Edit, Document, List, Delete, Link, Promotion
+  Edit, Document, List, Delete, Link, Promotion, Loading, CircleClose, Clock
 } from '@element-plus/icons-vue'
 import {
-  getNginxStatus, getNginxOverview, installNginx, nginxService,
+  getNginxStatus, getNginxOverview, nginxService,
   testNginxConfig, importNginxSites,
   listNginxSites, createNginxSite, updateNginxSite, deleteNginxSite,
   nginxSiteAction, manageNginxSSL, getNginxSiteConfig, saveNginxSiteConfig,
   getNginxSiteLogs
 } from '@/api/nginx'
+import { installNginx, getTaskProgress } from '@/api/installer'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -281,6 +327,15 @@ const installing = ref(false)
 const nginxStatus = ref<any>(null)
 const overview = ref<any>(null)
 const sites = ref<any[]>([])
+
+// 安装进度
+const progressDialogVisible = ref(false)
+const installProgress = ref(0)
+const installStatus = ref('pending')
+const installMessage = ref('')
+const installDetail = ref('')
+const currentTaskId = ref('')
+let progressTimer: any = null
 
 // 站点对话框
 const siteDialogVisible = ref(false)
@@ -343,13 +398,56 @@ async function loadData() {
 async function handleInstallNginx() {
   installing.value = true
   try {
-    await installNginx()
-    ElMessage.success('正在安装 Nginx...')
-    setTimeout(loadData, 3000)
+    const res: any = await installNginx()
+    currentTaskId.value = res.data?.task_id
+    installProgress.value = 0
+    installStatus.value = 'running'
+    installMessage.value = '准备安装...'
+    installDetail.value = ''
+    progressDialogVisible.value = true
+    
+    // 开始轮询进度
+    startProgressPolling()
   } catch (e: any) {
     ElMessage.error(e.message || '安装失败')
-  } finally {
     installing.value = false
+  }
+}
+
+function startProgressPolling() {
+  if (progressTimer) clearInterval(progressTimer)
+  progressTimer = setInterval(async () => {
+    if (!currentTaskId.value) return
+    try {
+      const res: any = await getTaskProgress(currentTaskId.value)
+      const data = res.data
+      installProgress.value = data.progress || 0
+      installStatus.value = data.status
+      installMessage.value = data.message || ''
+      installDetail.value = data.detail || ''
+      
+      if (data.status === 'success' || data.status === 'failed') {
+        clearInterval(progressTimer)
+        progressTimer = null
+        installing.value = false
+        if (data.status === 'success') {
+          ElMessage.success(data.message)
+          loadData()
+        } else {
+          ElMessage.error(data.message + (data.detail ? ': ' + data.detail : ''))
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, 1000)
+}
+
+function closeProgressDialog() {
+  progressDialogVisible.value = false
+  if (progressTimer) {
+    clearInterval(progressTimer)
+    progressTimer = null
   }
 }
 
@@ -683,5 +781,100 @@ async function loadLogs() {
     white-space: pre-wrap;
     word-break: break-all;
   }
+}
+
+.install-progress {
+  text-align: center;
+  padding: 10px 0;
+  
+  .progress-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+    
+    .progress-icon {
+      &.running {
+        color: var(--el-color-primary);
+        animation: rotate 1.5s linear infinite;
+      }
+      &.success { color: var(--el-color-success); }
+      &.failed { color: var(--el-color-danger); }
+      &.pending { color: var(--el-text-color-secondary); }
+    }
+    
+    .progress-info {
+      text-align: left;
+      
+      .progress-title {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      
+      .progress-message {
+        font-size: 13px;
+        color: var(--el-text-color-secondary);
+      }
+      
+      .progress-detail {
+        font-size: 12px;
+        color: var(--el-text-color-placeholder);
+        margin-top: 4px;
+        word-break: break-all;
+      }
+    }
+  }
+  
+  .progress-steps {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 20px;
+    
+    .step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      
+      .step-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--el-border-color);
+        transition: all 0.3s;
+      }
+      
+      .step-label {
+        font-size: 12px;
+        color: var(--el-text-color-secondary);
+      }
+      
+      &.active {
+        .step-dot {
+          background: var(--el-color-primary);
+          box-shadow: 0 0 0 4px rgba(64, 158, 255, 0.2);
+        }
+        .step-label {
+          color: var(--el-color-primary);
+          font-weight: 500;
+        }
+      }
+      
+      &.done {
+        .step-dot {
+          background: var(--el-color-success);
+        }
+        .step-label {
+          color: var(--el-color-success);
+        }
+      }
+    }
+  }
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 </style>

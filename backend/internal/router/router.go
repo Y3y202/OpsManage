@@ -148,7 +148,15 @@ func NewServer(cfg *config.Config) *http.Server {
 			nginx.GET("/sites/:id/logs/ws", handler.NginxSiteLogStream)
 		}
 
-			container := secure.Group("/containers")
+		// 安装进度
+		installer := secure.Group("/installer")
+		{
+			installer.GET("/tasks", handler.GetActiveTasks)
+			installer.GET("/tasks/:taskId", handler.GetTaskProgress)
+			installer.POST("/install/:type", handler.InstallService)
+		}
+
+		container := secure.Group("/containers")
 			{
 				container.GET("", handler.ListContainers)
 				container.POST("", handler.CreateContainer)
@@ -258,6 +266,7 @@ func NewServer(cfg *config.Config) *http.Server {
 
 	r.GET("/ws", handler.WSFileHandler)
 	r.GET("/ws/ssh/:id", handler.WebSSHHandler)
+	r.GET("/sse/progress/:taskId", handler.StreamTaskProgress)
 
 	r.NoRoute(func(c *gin.Context) {
 		if _, err := os.Stat("./static" + c.Request.URL.Path); err == nil {
