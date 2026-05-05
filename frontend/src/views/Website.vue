@@ -99,8 +99,8 @@
         <el-table-column prop="root" label="根目录" min-width="180" show-overflow-tooltip />
         <el-table-column prop="proxy_type" label="类型" width="80">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.proxy_type === 'proxy' ? 'warning' : row.proxy_type === 'php' ? 'success' : 'info'">
-              {{ row.proxy_type === 'proxy' ? '代理' : row.proxy_type === 'php' ? 'PHP' : '静态' }}
+            <el-tag size="small" :type="row.proxy_type === 'proxy' ? 'warning' : 'info'">
+              {{ row.proxy_type === 'proxy' ? '代理' : '静态' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -168,7 +168,6 @@
           <el-radio-group v-model="siteForm.proxy_type">
             <el-radio-button value="static">静态网站</el-radio-button>
             <el-radio-button value="proxy">反向代理</el-radio-button>
-            <el-radio-button value="php">PHP 网站</el-radio-button>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="代理地址" v-if="siteForm.proxy_type === 'proxy'">
@@ -464,7 +463,7 @@ async function loadData() {
     ])
     nginxStatus.value = (statusRes as any).data
     overview.value = (overviewRes as any).data
-    sites.value = (sitesRes as any).data?.items || (sitesRes as any).data || []
+    sites.value = (sitesRes as any).data?.list || (sitesRes as any).data || []
   } catch (e: any) {
     ElMessage.error(e.message || '加载失败')
   } finally {

@@ -112,7 +112,6 @@ type CreateNginxSiteReq struct {
 	Port       int    `json:"port"`
 	ProxyType  string `json:"proxy_type"`
 	ProxyPass  string `json:"proxy_pass"`
-	PHPVersion string `json:"php_version"`
 	Gzip       *bool  `json:"gzip"`
 	Remark     string `json:"remark"`
 }
@@ -146,7 +145,6 @@ func CreateNginxSite(c *gin.Context) {
 		Port:       req.Port,
 		ProxyType:  req.ProxyType,
 		ProxyPass:  req.ProxyPass,
-		PHPVersion: req.PHPVersion,
 		Gzip:       gzip,
 		Status:     "running",
 		Remark:     req.Remark,
@@ -572,11 +570,8 @@ func buildNginxConfig(site *model.NginxSite) string {
 
 	switch site.ProxyType {
 	case "proxy":
+		buf.WriteString(fmt.Sprintf("    root %s;\n    index index.html index.htm;\n\n", site.Root))
 		buf.WriteString(fmt.Sprintf("    location / {\n        proxy_pass %s;\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection \"upgrade\";\n    }\n", site.ProxyPass))
-	case "php":
-		buf.WriteString(fmt.Sprintf("    root %s;\n    index index.php index.html;\n\n", site.Root))
-		buf.WriteString("    location / {\n        try_files $uri $uri/ /index.php?$query_string;\n    }\n\n")
-		buf.WriteString("    location ~ \\.php$ {\n        fastcgi_pass unix:/var/run/php/php-fpm.sock;\n        fastcgi_index index.php;\n        include fastcgi_params;\n        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n    }\n")
 	default:
 		buf.WriteString(fmt.Sprintf("    root %s;\n    index index.html index.htm;\n\n", site.Root))
 		buf.WriteString("    location / {\n        try_files $uri $uri/ /index.html;\n    }\n")

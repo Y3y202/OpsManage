@@ -143,7 +143,7 @@ type NginxSite struct {
 	SSLCert       string         `gorm:"size:512" json:"ssl_cert"`
 	SSLKey        string         `gorm:"size:512" json:"ssl_key"`
 	ProxyPass     string         `gorm:"size:512" json:"proxy_pass"`
-	ProxyType     string         `gorm:"size:32;default:static" json:"proxy_type"`  // static / proxy / php
+	ProxyType     string         `gorm:"size:32;default:static" json:"proxy_type"`  // static / proxy
 	PHPVersion    string         `gorm:"size:16" json:"php_version"`
 	Gzip          bool           `gorm:"default:true" json:"gzip"`
 	CacheEnabled  bool           `gorm:"default:false" json:"cache_enabled"`
