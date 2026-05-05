@@ -20,7 +20,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'tasks', name: 'Task', component: () => import('@/views/Task.vue'), meta: { title: '计划任务' } },
       { path: 'security', name: 'Security', component: () => import('@/views/Security.vue'), meta: { title: '安全' } },
       { path: 'logs', name: 'Log', component: () => import('@/views/Log.vue'), meta: { title: '日志' } },
-      { path: 'settings', name: 'Setting', component: () => import('@/views/Setting.vue'), meta: { title: '设置' } }
+      { path: 'settings', name: 'Setting', component: () => import('@/views/Setting.vue'), meta: { title: '设置' } },
+      { path: 'versions', name: 'Version', component: () => import('@/views/Version.vue'), meta: { title: '版本管理' } }
     ]
   }
 ]

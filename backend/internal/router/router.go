@@ -255,6 +255,14 @@ func NewServer(cfg *config.Config) *http.Server {
 		settings.GET("/:key", handler.GetSettingByKey)
 		}
 
+		// 服务版本管理
+		version := secure.Group("/services")
+		{
+			version.GET("/versions", handler.GetServiceVersions)
+			version.GET("/versions/:type", handler.GetServiceVersionsByType)
+			version.POST("/:type/switch", handler.SwitchServiceVersion)
+		}
+
 		// SSL 证书管理
 		certificates := secure.Group("/certificates")
 		{

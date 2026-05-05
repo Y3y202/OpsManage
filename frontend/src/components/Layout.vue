@@ -27,7 +27,8 @@ const menuItems: MenuItem[] = [
   { path: '/tasks', icon: 'Timer', title: '计划任务' },
   { path: '/security', icon: 'Lock', title: '安全' },
   { path: '/logs', icon: 'Document', title: '日志' },
-  { path: '/settings', icon: 'Setting', title: '设置' }
+  { path: '/settings', icon: 'Setting', title: '设置' },
+  { path: '/versions', icon: 'Operation', title: '版本管理' }
 ]
 
 // 面包屑标题
