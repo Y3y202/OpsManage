@@ -232,9 +232,16 @@
         </el-form-item>
         <el-form-item label="字符集">
           <el-select v-model="databaseForm.charset">
-            <el-option label="utf8mb4" value="utf8mb4" />
-            <el-option label="utf8" value="utf8" />
-            <el-option label="latin1" value="latin1" />
+            <template v-if="selectedInstance?.type === 'postgresql'">
+              <el-option label="UTF8" value="UTF8" />
+              <el-option label="LATIN1" value="LATIN1" />
+              <el-option label="SQL_ASCII" value="SQL_ASCII" />
+            </template>
+            <template v-else>
+              <el-option label="utf8mb4" value="utf8mb4" />
+              <el-option label="utf8" value="utf8" />
+              <el-option label="latin1" value="latin1" />
+            </template>
           </el-select>
         </el-form-item>
         <el-form-item label="备注">
@@ -531,7 +538,8 @@ async function loadDatabases() {
 }
 
 function showCreateDatabase() {
-  databaseForm.value = { name: '', charset: 'utf8mb4', remark: '' }
+  const defaultCharset = selectedInstance.value?.type === 'postgresql' ? 'UTF8' : 'utf8mb4'
+  databaseForm.value = { name: '', charset: defaultCharset, remark: '' }
   databaseDialogVisible.value = true
 }
 

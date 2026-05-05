@@ -80,42 +80,34 @@ func NewServer(cfg *config.Config) *http.Server {
 				site.POST("/:id/stop", handler.StopWebsite)
 			}
 
-		db := secure.Group("/databases")
-		{
-			db.GET("", handler.ListDatabases)
-			db.POST("", handler.CreateDatabase)
-			db.GET("/:id", handler.GetDatabase)
-			db.PUT("/:id", handler.UpdateDatabase)
-			db.DELETE("/:id", handler.DeleteDatabase)
-			db.POST("/:id/start", handler.StartDatabase)
-			db.POST("/:id/stop", handler.StopDatabase)
+	db := secure.Group("/databases")
+	{
+		// 数据库服务管理
+		db.GET("/services/status", handler.DBServiceStatus)
+		db.GET("/instances", handler.ListDBInstances)
+		db.POST("/instances", handler.CreateDBInstance)
+		db.GET("/instances/:id", handler.GetDBInstance)
+		db.POST("/instances/:id/:action", handler.DBInstanceAction)
+		db.GET("/instances/:id/config", handler.DBInstanceConfig)
+		db.PUT("/instances/:id/config", handler.DBInstanceConfig)
+		db.GET("/instances/:id/stats", handler.DBInstanceStats)
 
-			// 数据库服务管理（新）
-			db.GET("/services/status", handler.DBServiceStatus)
-			db.GET("/instances", handler.ListDBInstances)
-			db.POST("/instances", handler.CreateDBInstance)
-			db.GET("/instances/:id", handler.GetDBInstance)
-			db.POST("/instances/:id/:action", handler.DBInstanceAction)
-			db.GET("/instances/:id/config", handler.DBInstanceConfig)
-			db.PUT("/instances/:id/config", handler.DBInstanceConfig)
-			db.GET("/instances/:id/stats", handler.DBInstanceStats)
+		// 数据库管理
+		db.GET("/instances/:id/databases", handler.ListDBDatabases)
+		db.POST("/instances/:id/databases", handler.CreateDBDatabase)
+		db.DELETE("/databases/:did", handler.DeleteDBDatabase)
+		db.POST("/instances/:id/databases/sync", handler.SyncDBDatabases)
 
-			// 数据库管理
-			db.GET("/instances/:id/databases", handler.ListDBDatabases)
-			db.POST("/instances/:id/databases", handler.CreateDBDatabase)
-			db.DELETE("/databases/:did", handler.DeleteDBDatabase)
-			db.POST("/instances/:id/databases/sync", handler.SyncDBDatabases)
+		// 用户管理
+		db.GET("/instances/:id/users", handler.ListDBUsers)
+		db.POST("/instances/:id/users", handler.CreateDBUser)
+		db.DELETE("/users/:did", handler.DeleteDBUser)
 
-			// 用户管理
-			db.GET("/instances/:id/users", handler.ListDBUsers)
-			db.POST("/instances/:id/users", handler.CreateDBUser)
-			db.DELETE("/users/:did", handler.DeleteDBUser)
-
-			// 备份管理
-			db.GET("/instances/:id/backups", handler.ListDBBackups)
-			db.POST("/instances/:id/backups", handler.CreateDBBackup)
-			db.POST("/backups/:bid/restore", handler.RestoreDBBackup)
-		}
+		// 备份管理
+		db.GET("/instances/:id/backups", handler.ListDBBackups)
+		db.POST("/instances/:id/backups", handler.CreateDBBackup)
+		db.POST("/backups/:bid/restore", handler.RestoreDBBackup)
+	}
 
 		// Nginx 管理
 		nginx := secure.Group("/nginx")
