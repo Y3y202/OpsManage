@@ -20,8 +20,16 @@ import (
 type applyCertReq struct {
 	Domain    string `json:"domain" binding:"required"`
 	Email     string `json:"email" binding:"required"`
-	Standalone bool  `json:"standalone"` // true=standalone模式, false=webroot模式
-	WebRoot   string `json:"web_root"`   // webroot模式下站点根目录
+	Challenge string `json:"challenge"` // http / dns
+	// HTTP 验证参数
+	Standalone bool   `json:"standalone"`
+	WebRoot    string `json:"web_root"`
+	// DNS 验证参数
+	DnsProvider string `json:"dns_provider"` // aliyun / tencent / huawei / cloudflare
+	DnsKey      string `json:"dns_key"`      // AccessKey / SecretId / AK / CF_Key
+	DnsSecret   string `json:"dns_secret"`   // AccessSecret / SecretKey / SK / CF_Email
+	// 华为云额外参数
+	HwProjectId string `json:"hw_project_id"`
 }
 
 func ApplyCertificate(c *gin.Context) {
@@ -31,51 +39,131 @@ func ApplyCertificate(c *gin.Context) {
 		return
 	}
 
-	// 检查 certbot 是否可用
-	if _, err := exec.LookPath("certbot"); err != nil {
-		fail(c, 500, "certbot 未安装，请先安装: apt install certbot")
+	// 默认 HTTP 验证
+	if req.Challenge == "" {
+		req.Challenge = "http"
+	}
+
+	// 泛域名必须使用 DNS 验证
+	if strings.HasPrefix(req.Domain, "*.") && req.Challenge != "dns" {
+		fail(c, 500, "泛域名证书必须使用 DNS 验证方式")
 		return
 	}
 
-	// 构建 certbot 命令
-	args := []string{
-		"certonly",
-		"--non-interactive",
-		"--agree-tos",
-		"--email", req.Email,
-		"-d", req.Domain,
-	}
-
-	if req.Standalone {
-		args = append(args, "--standalone")
-	} else {
-		webRoot := req.WebRoot
-		if webRoot == "" {
-			webRoot = "/var/www/html"
+	// 检查 acme.sh 是否可用
+	acmeSh := os.Getenv("HOME") + "/.acme.sh/acme.sh"
+	if _, err := os.Stat(acmeSh); err != nil {
+		// 尝试标准路径
+		acmeSh = "/root/.acme.sh/acme.sh"
+		if _, err := os.Stat(acmeSh); err != nil {
+			fail(c, 500, "acme.sh 未安装")
+			return
 		}
-		args = append(args, "--webroot", "-w", webRoot)
 	}
 
-	// 执行 certbot
-	cmd := exec.Command("certbot", args...)
+	var args []string
+	var envVars []string
+
+	if req.Challenge == "dns" {
+		// DNS-01 验证模式
+		if req.DnsProvider == "" {
+			fail(c, 500, "请选择 DNS 提供商")
+			return
+		}
+		if req.DnsKey == "" || req.DnsSecret == "" {
+			fail(c, 500, "请填写 DNS 提供商的 AccessKey 和 Secret")
+			return
+		}
+
+		// 设置 DNS 提供商环境变量
+		switch req.DnsProvider {
+		case "aliyun":
+			envVars = append(envVars, "Ali_Key="+req.DnsKey, "Ali_Secret="+req.DnsSecret)
+			args = append(args, "--dns", "dns_ali")
+		case "tencent":
+			envVars = append(envVars, "Tencent_SecretId="+req.DnsKey, "Tencent_SecretKey="+req.DnsSecret)
+			args = append(args, "--dns", "dns_tencent")
+		case "huawei":
+			if req.HwProjectId == "" {
+				fail(c, 500, "华为云需要填写项目 ID")
+				return
+			}
+			envVars = append(envVars,
+				"HUAWEICLOUD_AK="+req.DnsKey,
+				"HUAWEICLOUD_SK="+req.DnsSecret,
+				"HUAWEICLOUD_ProjectID="+req.HwProjectId,
+			)
+			args = append(args, "--dns", "dns_huaweicloud")
+		case "cloudflare":
+			envVars = append(envVars, "CF_Key="+req.DnsKey, "CF_Email="+req.DnsSecret)
+			args = append(args, "--dns", "dns_cf")
+		default:
+			fail(c, 500, "不支持的 DNS 提供商: "+req.DnsProvider)
+			return
+		}
+
+		args = append(args,
+			"--issue",
+			"--domain", req.Domain,
+			"--email", req.Email,
+			"--force",
+		)
+	} else {
+		// HTTP 验证模式
+		args = append(args,
+			"--issue",
+			"--domain", req.Domain,
+			"--email", req.Email,
+		)
+		if req.Standalone {
+			args = append(args, "--standalone")
+		} else {
+			webRoot := req.WebRoot
+			if webRoot == "" {
+				webRoot = "/var/www/html"
+			}
+			args = append(args, "--webroot", webRoot)
+		}
+	}
+
+	// 安装证书到固定目录
+	certName := req.Domain
+	certName = strings.ReplaceAll(certName, "*", "wildcard")
+	certDir := fmt.Sprintf("/etc/opsmanage/certs/%s", certName)
+	os.MkdirAll(certDir, 0700)
+
+	args = append(args,
+		"--cert-file", filepath.Join(certDir, "cert.pem"),
+		"--key-file", filepath.Join(certDir, "privkey.pem"),
+		"--fullchain-file", filepath.Join(certDir, "fullchain.pem"),
+		"--ca-file", filepath.Join(certDir, "chain.pem"),
+	)
+
+	// 执行 acme.sh
+	cmd := exec.Command(acmeSh, args...)
+	cmd.Env = append(os.Environ(), envVars...)
 	output, err := cmd.CombinedOutput()
 	outputStr := string(output)
 
 	if err != nil {
-		// 写入日志
 		config.DB.Create(&model.LogEntry{
 			Level:   "error",
 			Source:  "certificate",
 			Message: "证书申请失败: " + req.Domain,
 			Detail:  outputStr,
 		})
-		fail(c, 500, "证书申请失败: "+extractCertbotError(outputStr))
+		fail(c, 500, "证书申请失败: "+extractAcmeError(outputStr))
 		return
 	}
 
-	// 解析 certbot 输出，获取证书路径
-	certPath := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem", req.Domain)
-	keyPath := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem", req.Domain)
+	certPath := filepath.Join(certDir, "fullchain.pem")
+	keyPath := filepath.Join(certDir, "privkey.pem")
+
+	// 检查证书文件是否存在
+	if _, err := os.Stat(certPath); err != nil {
+		fail(c, 500, "证书文件未生成，请检查日志")
+		return
+	}
 
 	// 读取证书信息
 	info := parseCertInfo(certPath)
@@ -87,13 +175,18 @@ func ApplyCertificate(c *gin.Context) {
 		status = "about_to_expire"
 	}
 
+	certType := "letsencrypt"
+	if req.Challenge == "dns" {
+		certType = "letsencrypt-dns"
+	}
+
 	cert := model.Certificate{
-		Name:      req.Domain,
+		Name:      certName,
 		Domain:    req.Domain,
-		Type:      "letsencrypt",
+		Type:      certType,
 		CertPath:  certPath,
 		KeyPath:   keyPath,
-		ChainPath: fmt.Sprintf("/etc/letsencrypt/live/%s/chain.pem", req.Domain),
+		ChainPath: filepath.Join(certDir, "chain.pem"),
 		Issuer:    info.Issuer,
 		NotBefore: info.NotBefore,
 		NotAfter:  info.NotAfter,
@@ -104,7 +197,7 @@ func ApplyCertificate(c *gin.Context) {
 
 	// 如果已存在同名证书则更新
 	var existing model.Certificate
-	if err := config.DB.Where("name = ?", req.Domain).First(&existing).Error; err == nil {
+	if err := config.DB.Where("name = ?", certName).First(&existing).Error; err == nil {
 		cert.ID = existing.ID
 		config.DB.Save(&cert)
 	} else {
@@ -242,15 +335,15 @@ func DeleteCertificate(c *gin.Context) {
 		return
 	}
 
-	// Let's Encrypt 证书用 certbot 撤销并删除
-	if cert.Type == "letsencrypt" {
-		exec.Command("certbot", "revoke", "--cert-path", cert.CertPath, "--non-interactive").Run()
-		exec.Command("certbot", "delete", "--cert-name", cert.Domain, "--non-interactive").Run()
-	} else {
-		// 自定义证书删除文件
-		certDir := filepath.Dir(cert.CertPath)
-		os.RemoveAll(certDir)
+	// acme.sh 证书用 revoke 命令撤销
+	if cert.Type == "letsencrypt" || cert.Type == "letsencrypt-dns" {
+		acmeSh := "/root/.acme.sh/acme.sh"
+		exec.Command(acmeSh, "--revoke", "-d", cert.Domain, "--force").Run()
 	}
+
+	// 删除证书文件
+	certDir := filepath.Dir(cert.CertPath)
+	os.RemoveAll(certDir)
 
 	config.DB.Delete(&cert)
 	success(c, "证书已删除")
@@ -266,12 +359,13 @@ func RenewCertificate(c *gin.Context) {
 		return
 	}
 
-	if cert.Type != "letsencrypt" {
+	if cert.Type != "letsencrypt" && cert.Type != "letsencrypt-dns" {
 		fail(c, 500, "只有 Let's Encrypt 证书支持自动续签")
 		return
 	}
 
-	cmd := exec.Command("certbot", "renew", "--cert-name", cert.Domain, "--non-interactive")
+	acmeSh := "/root/.acme.sh/acme.sh"
+	cmd := exec.Command(acmeSh, "--renew", "-d", cert.Domain, "--force")
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -436,7 +530,7 @@ func parseCertInfo(certPath string) certInfo {
 	return info
 }
 
-func extractCertbotError(output string) string {
+func extractAcmeError(output string) string {
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		lower := strings.ToLower(line)

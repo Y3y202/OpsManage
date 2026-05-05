@@ -60,10 +60,10 @@
           </template>
         </el-table-column>
         <el-table-column prop="domain" label="域名" min-width="160" />
-        <el-table-column prop="type" label="类型" width="120">
+        <el-table-column prop="type" label="类型" width="130">
           <template #default="{ row }">
-            <el-tag :type="row.type === 'letsencrypt' ? 'success' : 'warning'" size="small">
-              {{ row.type === 'letsencrypt' ? "Let's Encrypt" : '自定义' }}
+            <el-tag :type="row.type === 'custom' ? 'warning' : 'success'" size="small">
+              {{ row.type === 'letsencrypt' ? "Let's Encrypt" : row.type === 'letsencrypt-dns' ? 'DNS 泛域名' : '自定义' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -95,7 +95,7 @@
             <el-button-group size="small">
               <el-button type="primary" link @click="viewCertDetail(row)">详情</el-button>
               <el-button
-                v-if="row.type === 'letsencrypt'"
+                v-if="row.type === 'letsencrypt' || row.type === 'letsencrypt-dns'"
                 type="success"
                 link
                 @click="handleRenew(row)"
@@ -109,23 +109,65 @@
     </el-card>
 
     <!-- 申请 Let's Encrypt 证书对话框 -->
-    <el-dialog v-model="showApplyDialog" title="申请 Let's Encrypt 证书" width="500px" destroy-on-close>
+    <el-dialog v-model="showApplyDialog" title="申请 Let's Encrypt 证书" width="560px" destroy-on-close>
       <el-form :model="applyForm" label-width="100px" ref="applyFormRef" :rules="applyRules">
         <el-form-item label="域名" prop="domain">
-          <el-input v-model="applyForm.domain" placeholder="例如: example.com" />
+          <el-input v-model="applyForm.domain" placeholder="example.com 或 *.example.com（泛域名）" />
         </el-form-item>
         <el-form-item label="邮箱" prop="email">
           <el-input v-model="applyForm.email" placeholder="admin@example.com" />
         </el-form-item>
         <el-form-item label="验证方式">
-          <el-radio-group v-model="applyForm.standalone">
-            <el-radio :value="false">Webroot（推荐，无需停止 Nginx）</el-radio>
-            <el-radio :value="true">Standalone（需要 80 端口空闲）</el-radio>
+          <el-radio-group v-model="applyForm.challenge" @change="onChallengeChange">
+            <el-radio value="http">HTTP 验证（仅普通域名）</el-radio>
+            <el-radio value="dns">DNS 验证（支持泛域名）</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="!applyForm.standalone" label="Web 目录">
-          <el-input v-model="applyForm.web_root" placeholder="/var/www/html" />
-        </el-form-item>
+        <!-- HTTP 验证选项 -->
+        <template v-if="applyForm.challenge === 'http'">
+          <el-form-item label="模式">
+            <el-radio-group v-model="applyForm.standalone">
+              <el-radio :value="false">Webroot（推荐，无需停止 Nginx）</el-radio>
+              <el-radio :value="true">Standalone（需要 80 端口空闲）</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item v-if="!applyForm.standalone" label="Web 目录">
+            <el-input v-model="applyForm.web_root" placeholder="/var/www/html" />
+          </el-form-item>
+        </template>
+        <!-- DNS 验证选项 -->
+        <template v-if="applyForm.challenge === 'dns'">
+          <el-form-item label="DNS 提供商">
+            <el-select v-model="applyForm.dns_provider" placeholder="选择域名所在的云服务商" style="width: 100%">
+              <el-option label="阿里云（Alibaba Cloud）" value="aliyun" />
+              <el-option label="腾讯云（Tencent Cloud）" value="tencent" />
+              <el-option label="华为云（Huawei Cloud）" value="huawei" />
+              <el-option label="Cloudflare" value="cloudflare" />
+            </el-select>
+          </el-form-item>
+          <el-form-item :label="dnsKeyLabel">
+            <el-input v-model="applyForm.dns_key" :placeholder="dnsKeyPlaceholder" show-password />
+          </el-form-item>
+          <el-form-item :label="dnsSecretLabel">
+            <el-input v-model="applyForm.dns_secret" :placeholder="dnsSecretPlaceholder" show-password />
+          </el-form-item>
+          <el-form-item v-if="applyForm.dns_provider === 'huawei'" label="项目 ID">
+            <el-input v-model="applyForm.hw_project_id" placeholder="华为云项目 ID" />
+          </el-form-item>
+          <el-alert type="info" :closable="false" style="margin-bottom: 12px;">
+            <template #title>
+              <div style="font-size: 12px; line-height: 1.6;">
+                <b>泛域名格式：</b>输入 <code>*.example.com</code> 即可为主域及所有子域申请一张证书<br/>
+                <b>密钥获取：</b>
+                <span v-if="applyForm.dns_provider === 'aliyun'">阿里云控制台 → 右上角头像 → AccessKey 管理</span>
+                <span v-else-if="applyForm.dns_provider === 'tencent'">腾讯云控制台 → 访问管理 → API 密钥管理</span>
+                <span v-else-if="applyForm.dns_provider === 'huawei'">华为云控制台 → 我的凭证 → 访问密钥</span>
+                <span v-else-if="applyForm.dns_provider === 'cloudflare'">Cloudflare Dashboard → My Profile → API Tokens</span>
+                <span v-else>选择 DNS 提供商后显示获取方式</span>
+              </div>
+            </template>
+          </el-alert>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="showApplyDialog = false">取消</el-button>
@@ -184,8 +226,8 @@
           <el-descriptions-item label="证书名称">{{ currentCert.name }}</el-descriptions-item>
           <el-descriptions-item label="域名">{{ currentCert.domain }}</el-descriptions-item>
           <el-descriptions-item label="类型">
-            <el-tag :type="currentCert.type === 'letsencrypt' ? 'success' : 'warning'" size="small">
-              {{ currentCert.type === 'letsencrypt' ? "Let's Encrypt" : '自定义' }}
+            <el-tag :type="currentCert.type === 'custom' ? 'warning' : 'success'" size="small">
+              {{ currentCert.type === 'letsencrypt' ? "Let's Encrypt" : currentCert.type === 'letsencrypt-dns' ? 'DNS 泛域名' : '自定义' }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="状态">
@@ -282,12 +324,45 @@ const applying = ref(false)
 const applyForm = ref({
   domain: '',
   email: '',
+  challenge: 'http',
+  // HTTP 验证
   standalone: false,
-  web_root: '/var/www/html'
+  web_root: '/var/www/html',
+  // DNS 验证
+  dns_provider: '',
+  dns_key: '',
+  dns_secret: '',
+  hw_project_id: ''
 })
 const applyRules = {
   domain: [{ required: true, message: '请输入域名', trigger: 'blur' }],
   email: [{ required: true, message: '请输入邮箱', trigger: 'blur' }]
+}
+
+// DNS 提供商标签
+const dnsKeyLabel = computed(() => {
+  const map: any = { aliyun: 'AccessKey ID', tencent: 'SecretId', huawei: 'Access Key ID', cloudflare: 'API Key' }
+  return map[applyForm.value.dns_provider] || 'AccessKey'
+})
+const dnsSecretLabel = computed(() => {
+  const map: any = { aliyun: 'AccessKey Secret', tencent: 'SecretKey', huawei: 'Secret Access Key', cloudflare: 'Email' }
+  return map[applyForm.value.dns_provider] || 'Secret'
+})
+const dnsKeyPlaceholder = computed(() => {
+  const map: any = { aliyun: 'LTAI5t...', tencent: 'AKID...', huawei: 'XGHT...', cloudflare: 'a1b2c3...' }
+  return map[applyForm.value.dns_provider] || '请输入 AccessKey'
+})
+const dnsSecretPlaceholder = computed(() => {
+  const map: any = { aliyun: 'AccessKey Secret', tencent: 'SecretKey', huawei: 'Secret Access Key', cloudflare: 'user@example.com' }
+  return map[applyForm.value.dns_provider] || '请输入 Secret'
+})
+
+function onChallengeChange() {
+  // 切换验证方式时清理 DNS 相关字段
+  applyForm.value.dns_provider = ''
+  applyForm.value.dns_key = ''
+  applyForm.value.dns_secret = ''
+  applyForm.value.hw_project_id = ''
 }
 
 // 上传表单
@@ -341,7 +416,7 @@ async function handleApply() {
     await applyLetsencrypt(applyForm.value)
     ElMessage.success('证书申请成功')
     showApplyDialog.value = false
-    applyForm.value = { domain: '', email: '', standalone: false, web_root: '/var/www/html' }
+    applyForm.value = { domain: '', email: '', challenge: 'http', standalone: false, web_root: '/var/www/html', dns_provider: '', dns_key: '', dns_secret: '', hw_project_id: '' }
     loadCertificates()
   } catch (e: any) {
     ElMessage.error(e?.message || '证书申请失败')
