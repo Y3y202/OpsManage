@@ -244,3 +244,23 @@ type ComposeTemplate struct {
 	Description string         `gorm:"size:512" json:"description"`
 	Content     string         `gorm:"type:text" json:"content"`
 }
+
+// Certificate SSL 证书
+type Certificate struct {
+	ID        uint           `gorm:"primaryKey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	Name      string         `gorm:"uniqueIndex;size:255" json:"name"`       // 证书名称
+	Domain    string         `gorm:"size:255" json:"domain"`                 // 域名
+	Type      string         `gorm:"size:20" json:"type"`                    // letsencrypt / custom
+	CertPath  string         `gorm:"size:500" json:"cert_path"`              // 证书文件路径
+	KeyPath   string         `gorm:"size:500" json:"key_path"`               // 私钥文件路径
+	ChainPath string         `gorm:"size:500" json:"chain_path"`             // 证书链路径
+	Issuer    string         `gorm:"size:255" json:"issuer"`                 // 颁发者
+	NotBefore time.Time      `json:"not_before"`                             // 生效时间
+	NotAfter  time.Time      `json:"not_after"`                              // 过期时间
+	Subject   string         `gorm:"size:500" json:"subject"`                // 主题
+	SANs      string         `gorm:"type:text" json:"sans"`                  // 备用域名
+	Status    string         `gorm:"size:20;default:valid" json:"status"`    // valid / expired / about_to_expire
+}

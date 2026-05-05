@@ -123,6 +123,7 @@ func InitDB(cfg *Config) error {
 		&model.DBDatabase{},
 		&model.DBUser{},
 		&model.DBBackup{},
+		&model.Certificate{},
 	); err != nil {
 		return fmt.Errorf("迁移失败: %w", err)
 	}

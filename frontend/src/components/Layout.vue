@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 
@@ -8,9 +8,19 @@ const route = useRoute()
 const userStore = useUserStore()
 const isCollapse = ref(false)
 
-const menuItems = [
+interface MenuItem {
+  path: string
+  icon: string
+  title: string
+  children?: { path: string; icon: string; title: string }[]
+}
+
+const menuItems: MenuItem[] = [
   { path: '/dashboard', icon: 'Odometer', title: '仪表盘' },
-  { path: '/websites', icon: 'Globe', title: '网站' },
+  { path: '', icon: 'Globe', title: '网站', children: [
+    { path: '/websites', icon: 'List', title: '站点管理' },
+    { path: '/certificates', icon: 'Key', title: '证书' }
+  ]},
   { path: '/databases', icon: 'Coin', title: '数据库' },
   { path: '/containers', icon: 'Box', title: '容器' },
   { path: '/files', icon: 'FolderOpened', title: '文件' },
@@ -19,6 +29,18 @@ const menuItems = [
   { path: '/logs', icon: 'Document', title: '日志' },
   { path: '/settings', icon: 'Setting', title: '设置' }
 ]
+
+// 面包屑标题
+const currentTitle = computed(() => {
+  for (const item of menuItems) {
+    if (item.path === route.path) return item.title
+    if (item.children) {
+      const child = item.children.find(c => c.path === route.path)
+      if (child) return child.title
+    }
+  }
+  return ''
+})
 
 async function handleLogout() {
   await userStore.logout()
@@ -45,18 +67,40 @@ onMounted(() => { userStore.fetchProfile() })
         :default-active="route.path"
         :collapse="isCollapse"
         :collapse-transition="false"
+        :default-openeds="['website-group']"
         class="sidebar-menu"
         router
       >
-        <el-menu-item
-          v-for="item in menuItems"
-          :key="item.path"
-          :index="item.path"
-          class="menu-item"
-        >
-          <el-icon><component :is="item.icon" /></el-icon>
-          <template #title>{{ item.title }}</template>
-        </el-menu-item>
+        <template v-for="item in menuItems" :key="item.path || item.title">
+          <!-- 有子菜单 -->
+          <el-sub-menu
+            v-if="item.children && item.children.length"
+            :index="item.title + '-group'"
+            class="menu-item"
+          >
+            <template #title>
+              <el-icon><component :is="item.icon" /></el-icon>
+              <span>{{ item.title }}</span>
+            </template>
+            <el-menu-item
+              v-for="child in item.children"
+              :key="child.path"
+              :index="child.path"
+            >
+              <el-icon><component :is="child.icon" /></el-icon>
+              <template #title>{{ child.title }}</template>
+            </el-menu-item>
+          </el-sub-menu>
+          <!-- 普通菜单项 -->
+          <el-menu-item
+            v-else
+            :index="item.path"
+            class="menu-item"
+          >
+            <el-icon><component :is="item.icon" /></el-icon>
+            <template #title>{{ item.title }}</template>
+          </el-menu-item>
+        </template>
       </el-menu>
 
       <div class="sidebar-footer">
@@ -74,7 +118,7 @@ onMounted(() => { userStore.fetchProfile() })
         <div class="header-left">
           <el-breadcrumb separator="/">
             <el-breadcrumb-item :to="{ path: '/' }">首页</el-breadcrumb-item>
-            <el-breadcrumb-item>{{ menuItems.find(m => m.path === route.path)?.title || '' }}</el-breadcrumb-item>
+            <el-breadcrumb-item>{{ currentTitle }}</el-breadcrumb-item>
           </el-breadcrumb>
         </div>
         <div class="header-right">

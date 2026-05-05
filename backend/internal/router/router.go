@@ -252,9 +252,23 @@ func NewServer(cfg *config.Config) *http.Server {
 		{
 			settings.GET("", handler.GetSettings)
 			settings.PUT("", handler.UpdateSettings)
-			settings.GET("/:key", handler.GetSettingByKey)
+		settings.GET("/:key", handler.GetSettingByKey)
 		}
+
+		// SSL 证书管理
+		certificates := secure.Group("/certificates")
+		{
+			certificates.GET("", handler.ListCertificates)
+			certificates.POST("", handler.UploadCertificate)
+			certificates.POST("/apply", handler.ApplyCertificate)
+			certificates.GET("/sites", handler.ListSitesForCert)
+			certificates.GET("/:id", handler.GetCertificate)
+			certificates.DELETE("/:id", handler.DeleteCertificate)
+			certificates.POST("/:id/renew", handler.RenewCertificate)
+			certificates.GET("/:id/content/:field", handler.GetCertificateContent)
+			certificates.POST("/:id/apply-site", handler.ApplyCertToSite)
 		}
+	}
 	}
 
 	r.GET("/ws", handler.WSFileHandler)

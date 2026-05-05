@@ -13,6 +13,7 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: 'dashboard', name: 'Dashboard', component: () => import('@/views/Dashboard.vue'), meta: { title: '仪表盘' } },
       { path: 'websites', name: 'Website', component: () => import('@/views/Website.vue'), meta: { title: '网站' } },
+      { path: 'certificates', name: 'Certificate', component: () => import('@/views/Certificate.vue'), meta: { title: '证书' } },
       { path: 'databases', name: 'Database', component: () => import('@/views/Database.vue'), meta: { title: '数据库' } },
       { path: 'containers', name: 'Container', component: () => import('@/views/Container.vue'), meta: { title: '容器' } },
       { path: 'files', name: 'FileManager', component: () => import('@/views/FileManager.vue'), meta: { title: '文件' } },
