@@ -45,7 +45,16 @@ func detectDBVersion(dbType string) string {
 	// Parse version from output
 	switch dbType {
 	case "mysql":
-		// "mysql  Ver 8.0.45 for Linux on x86_64 ..."
+		// MySQL 5.7: "mysql  Ver 14.14 Distrib 5.7.42, ..."
+		// MySQL 8.0: "mysql  Ver 8.0.45 for Linux on x86_64 ..."
+		// 优先找 "Distrib" 后的版本号
+		if idx := strings.Index(s, "Distrib "); idx >= 0 {
+			rest := s[idx+len("Distrib "):]
+			parts := strings.Fields(rest)
+			if len(parts) > 0 {
+				return strings.TrimRight(parts[0], ",")
+			}
+		}
 		parts := strings.Fields(s)
 		for i, p := range parts {
 			if p == "Ver" && i+1 < len(parts) {

@@ -537,7 +537,8 @@ func switchNginxVersion(taskID, targetVersion string) error {
 // switchMySQLVersion 切换 MySQL 版本
 func switchMySQLVersion(taskID, targetVersion string) error {
 	currentVersion := getMySQLVersion()
-	if extractMajorVersion(currentVersion) == targetVersion {
+	currentMajor := extractMajorVersion(currentVersion)
+	if currentMajor == targetVersion {
 		return fmt.Errorf("当前已是版本 %s", currentVersion)
 	}
 
@@ -550,51 +551,114 @@ func switchMySQLVersion(taskID, targetVersion string) error {
 	cmd.Run()
 	addInstallLog(taskID, fmt.Sprintf("备份完成: %s", backupPath))
 
-	setProgress(taskID, "running", 25, "停止 MySQL 服务...")
+	setProgress(taskID, "running", 25, "停止并移除当前 MySQL...")
 	exec.Command("systemctl", "stop", "mysql").Run()
-	exec.Command("systemctl", "stop", "mariadb").Run()
 	exec.Command("systemctl", "stop", "mysqld").Run()
 
-	setProgress(taskID, "running", 35, "安装目标版本...")
+	// 完全移除当前版本
+	purgeCmd := exec.Command("apt-get", "purge", "-y", "mysql-*", "mysql*", "mariadb-*")
+	purgeCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	purgeCmd.Run()
+	exec.Command("apt-get", "autoremove", "-y").Run()
+
+	setProgress(taskID, "running", 40, fmt.Sprintf("安装 MySQL %s ...", targetVersion))
 
 	var installCmd *exec.Cmd
 	if targetVersion == "5.7" {
-		// MySQL 5.7 使用 mysql-community-server 包（来自 bionic 仓库）
-		fullVersion := findFullPackageVersion("mysql-server", targetVersion)
+		// MySQL 5.7 需要特殊处理：从 bionic 仓库安装
+		addInstallLog(taskID, "处理 Ubuntu 24.04 兼容性...")
+
+		// 1. 安装 libtinfo5（真正的 Ubuntu 18.04 包）
+		addInstallLog(taskID, "安装 libtinfo5 兼容库...")
+		libtinfoPath := "/usr/lib/x86_64-linux-gnu/libtinfo.so.5"
+		if _, err := os.Stat(libtinfoPath); os.IsNotExist(err) {
+			// 下载并安装真正的 libtinfo5
+			exec.Command("wget", "-q",
+				"http://archive.ubuntu.com/ubuntu/pool/main/n/ncurses/libtinfo5_6.1-1ubuntu1_amd64.deb",
+				"-O", "/tmp/libtinfo5_real.deb").Run()
+			exec.Command("dpkg", "-i", "--force-depends", "/tmp/libtinfo5_real.deb").Run()
+		}
+		// 如果还是没有，创建符号链接
+		if _, err := os.Stat(libtinfoPath); os.IsNotExist(err) {
+			exec.Command("ln", "-sf",
+				"/usr/lib/x86_64-linux-gnu/libtinfo.so.6",
+				libtinfoPath).Run()
+		}
+
+		// 2. 安装 libaio1 兼容包
+		libaioPath := "/usr/lib/x86_64-linux-gnu/libaio.so.1"
+		if _, err := os.Stat(libaioPath); os.IsNotExist(err) {
+			addInstallLog(taskID, "创建 libaio1 兼容链接...")
+			exec.Command("ln", "-sf",
+				"/usr/lib/x86_64-linux-gnu/libaio.so.1t64",
+				libaioPath).Run()
+			exec.Command("ldconfig").Run()
+		}
+
+		fullVersion := findFullVersionFromMadison("mysql-community-server", targetVersion)
 		if fullVersion == "" {
 			fullVersion = "5.7.42-1ubuntu18.04"
 		}
-		addInstallLog(taskID, fmt.Sprintf("安装 mysql-community-server %s", fullVersion))
+		clientVersion := findFullVersionFromMadison("mysql-community-client", targetVersion)
+		if clientVersion == "" {
+			clientVersion = fullVersion
+		}
 
-		// 先安装依赖
-		exec.Command("apt-get", "install", "-y", "--allow-downgrades", "mysql-common=5.7*").Run()
+		addInstallLog(taskID, fmt.Sprintf("安装 mysql-community-client/server %s", fullVersion))
 
 		installCmd = exec.Command("apt-get", "install", "-y", "--allow-downgrades",
+			fmt.Sprintf("mysql-community-client=%s", clientVersion),
 			fmt.Sprintf("mysql-community-server=%s", fullVersion),
 			"--fix-broken")
 	} else {
-		// MySQL 8.0+ 使用 mysql-server 包
-		fullVersion := findFullPackageVersion("mysql-server", targetVersion)
-		if fullVersion == "" {
-			fullVersion = targetVersion
-		}
-		addInstallLog(taskID, fmt.Sprintf("安装 mysql-server %s", fullVersion))
-
-		installCmd = exec.Command("apt-get", "install", "-y", "--allow-downgrades",
-			fmt.Sprintf("mysql-server=%s", fullVersion))
+		// MySQL 8.0 / 9.6 从 Ubuntu 默认仓库或 MySQL 官方仓库安装
+		addInstallLog(taskID, "安装 mysql-server ...")
+		installCmd = exec.Command("apt-get", "install", "-y", "--allow-downgrades", "mysql-server")
 	}
 
 	installCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 	output, err := installCmd.CombinedOutput()
 	if err != nil {
 		addInstallLog(taskID, fmt.Sprintf("安装失败: %s", string(output)))
-		exec.Command("systemctl", "start", "mysql").Run()
+		// 尝试恢复安装 8.0
+		restoreCmd := exec.Command("apt-get", "install", "-y", "mysql-server")
+		restoreCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+		restoreCmd.Run()
 		return fmt.Errorf("安装失败: %s", string(output))
 	}
 
 	setProgress(taskID, "running", 75, "启动 MySQL 服务...")
-	if exec.Command("systemctl", "start", "mysql").Run() != nil {
-		exec.Command("systemctl", "start", "mysqld").Run()
+	exec.Command("systemctl", "daemon-reload").Run()
+
+	// 检查数据目录兼容性，不兼容时重新初始化
+	dataDir := "/var/lib/mysql"
+	if _, err := os.Stat(dataDir + "/ibdata1"); err == nil {
+		// 尝试启动，失败则重新初始化
+		if exec.Command("systemctl", "start", "mysql").Run() != nil {
+			addInstallLog(taskID, "数据目录不兼容，重新初始化...")
+			exec.Command("systemctl", "stop", "mysql").Run()
+			os.RemoveAll(dataDir)
+			os.MkdirAll(dataDir, 0755)
+			exec.Command("chown", "mysql:mysql", dataDir).Run()
+			exec.Command("mysqld", "--initialize-insecure", "--user=mysql").Run()
+			exec.Command("systemctl", "start", "mysql").Run()
+			// 设置默认密码
+			time.Sleep(3 * time.Second)
+			exec.Command("mysql", "-u", "root",
+				"-e", "ALTER USER 'root'@'localhost' IDENTIFIED BY 'admin123'; FLUSH PRIVILEGES;").Run()
+			addInstallLog(taskID, "数据库已初始化，默认密码: admin123")
+		}
+	} else {
+		// 数据目录不存在，初始化
+		addInstallLog(taskID, "初始化 MySQL 数据目录...")
+		os.MkdirAll(dataDir, 0755)
+		exec.Command("chown", "mysql:mysql", dataDir).Run()
+		exec.Command("mysqld", "--initialize-insecure", "--user=mysql").Run()
+		exec.Command("systemctl", "start", "mysql").Run()
+		time.Sleep(3 * time.Second)
+		exec.Command("mysql", "-u", "root",
+			"-e", "ALTER USER 'root'@'localhost' IDENTIFIED BY 'admin123'; FLUSH PRIVILEGES;").Run()
+		addInstallLog(taskID, "数据库已初始化，默认密码: admin123")
 	}
 
 	setProgress(taskID, "running", 90, "验证版本...")
