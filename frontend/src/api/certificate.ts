@@ -41,6 +41,11 @@ export function renewCertificate(id: number) {
   return request.post(`/certificates/${id}/renew`)
 }
 
+// 切换自动续签
+export function toggleAutoRenew(id: number) {
+  return request.post(`/certificates/${id}/auto-renew`)
+}
+
 // 获取证书文件内容
 export function getCertificateContent(id: number, field: string) {
   return request.get(`/certificates/${id}/content/${field}`)

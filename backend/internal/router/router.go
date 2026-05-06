@@ -273,6 +273,7 @@ func NewServer(cfg *config.Config) *http.Server {
 			certificates.GET("/:id", handler.GetCertificate)
 			certificates.DELETE("/:id", handler.DeleteCertificate)
 			certificates.POST("/:id/renew", handler.RenewCertificate)
+		certificates.POST("/:id/auto-renew", handler.ToggleAutoRenew)
 			certificates.GET("/:id/content/:field", handler.GetCertificateContent)
 			certificates.POST("/:id/apply-site", handler.ApplyCertToSite)
 		}

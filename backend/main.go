@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"opsmanage/internal/config"
+	"opsmanage/internal/handler"
 	"opsmanage/internal/middleware"
 	"opsmanage/internal/router"
 	"opsmanage/internal/scheduler"
@@ -36,6 +37,7 @@ func main() {
 
 	scheduler.Init()
 	middleware.StartBlacklistCleanup()
+	handler.StartCertAutoRenewScheduler()
 
 	srv := router.NewServer(cfg)
 

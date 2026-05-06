@@ -90,7 +90,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="操作" width="320" fixed="right">
           <template #default="{ row }">
             <el-button-group size="small">
               <el-button type="primary" link @click="viewCertDetail(row)">详情</el-button>
@@ -100,6 +100,12 @@
                 link
                 @click="handleRenew(row)"
               >续签</el-button>
+              <el-button
+                v-if="row.type === 'letsencrypt' || row.type === 'letsencrypt-dns'"
+                :type="row.auto_renew ? 'success' : 'info'"
+                link
+                @click="handleToggleAutoRenew(row)"
+              >{{ row.auto_renew ? '✓ 自动续签' : '自动续签' }}</el-button>
               <el-button type="warning" link @click="showApplyToSite(row)">绑定站点</el-button>
               <el-button type="danger" link @click="handleDelete(row)">删除</el-button>
             </el-button-group>
@@ -296,7 +302,7 @@ import {
 import {
   getCertificates, applyLetsencrypt, uploadCertificate,
   deleteCertificate, renewCertificate, getCertificateContent,
-  applyCertToSite, getSitesForCert
+  applyCertToSite, getSitesForCert, toggleAutoRenew
 } from '@/api/certificate'
 
 // 使用 any 类型以匹配项目风格
@@ -482,6 +488,17 @@ async function handleRenew(cert: Certificate) {
     loadCertificates()
   } catch (e: any) {
     ElMessage.error(e?.message || '续签失败')
+  }
+}
+
+// 切换自动续签
+async function handleToggleAutoRenew(cert: Certificate) {
+  try {
+    const res = await toggleAutoRenew(cert.id)
+    ElMessage.success(res.data?.message || '操作成功')
+    loadCertificates()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '操作失败')
   }
 }
 

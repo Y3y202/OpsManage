@@ -401,6 +401,101 @@ func RenewCertificate(c *gin.Context) {
 	success(c, "续签成功")
 }
 
+// ==================== 自动续签开关 ====================
+
+func ToggleAutoRenew(c *gin.Context) {
+	id := c.Param("id")
+	var cert model.Certificate
+	if err := config.DB.First(&cert, id).Error; err != nil {
+		fail(c, 500, "证书不存在")
+		return
+	}
+
+	if cert.Type != "letsencrypt" && cert.Type != "letsencrypt-dns" {
+		fail(c, 500, "只有 Let's Encrypt 证书支持自动续签")
+		return
+	}
+
+	cert.AutoRenew = !cert.AutoRenew
+	config.DB.Model(&cert).Update("auto_renew", cert.AutoRenew)
+
+	msg := "已关闭自动续签"
+	if cert.AutoRenew {
+		msg = "已开启自动续签"
+	}
+	addLog("info", "certificate", fmt.Sprintf("证书 %s %s", cert.Domain, msg))
+	success(c, gin.H{"auto_renew": cert.AutoRenew, "message": msg})
+}
+
+// ==================== 后台自动续签任务 ====================
+
+// StartCertAutoRenewScheduler 启动证书自动续签定时检查（每天凌晨 3 点执行）
+func StartCertAutoRenewScheduler() {
+	go func() {
+		for {
+			// 计算到凌晨 3 点的等待时间
+			now := time.Now()
+			next := time.Date(now.Year(), now.Month(), now.Day(), 3, 0, 0, 0, now.Location())
+			if now.After(next) {
+				next = next.Add(24 * time.Hour)
+			}
+			time.Sleep(time.Until(next))
+
+			checkAndRenewCerts()
+		}
+	}()
+
+	// 启动时也检查一次
+	go checkAndRenewCerts()
+}
+
+func checkAndRenewCerts() {
+	var certs []model.Certificate
+	// 查找 30 天内即将过期且开启自动续签的 Let's Encrypt 证书
+	config.DB.Where("(type = ? OR type = ?) AND auto_renew = ?",
+		"letsencrypt", "letsencrypt-dns", true).Find(&certs)
+
+	now := time.Now()
+	renewThreshold := now.Add(30 * 24 * time.Hour)
+
+	for _, cert := range certs {
+		if cert.NotAfter.Before(renewThreshold) {
+			addLog("info", "certificate", fmt.Sprintf("自动续签证书: %s (到期: %s)", cert.Domain, cert.NotAfter.Format("2006-01-02")))
+
+			acmeSh := "/root/.acme.sh/acme.sh"
+			cmd := exec.Command(acmeSh, "--renew", "-d", cert.Domain, "--force")
+			output, err := cmd.CombinedOutput()
+
+			if err != nil {
+				addLog("error", "certificate", fmt.Sprintf("自动续签失败 %s: %s", cert.Domain, string(output)))
+				continue
+			}
+
+			// 重新读取证书信息
+			if _, err := os.Stat(cert.CertPath); err == nil {
+				info := parseCertInfo(cert.CertPath)
+				status := "valid"
+				if info.NotAfter.Before(now) {
+					status = "expired"
+				} else if info.NotAfter.Before(renewThreshold) {
+					status = "about_to_expire"
+				}
+
+				config.DB.Model(&cert).Updates(map[string]interface{}{
+					"issuer":    info.Issuer,
+					"not_before": info.NotBefore,
+					"not_after":  info.NotAfter,
+					"subject":   info.Subject,
+					"sans":      info.SANs,
+					"status":    status,
+				})
+			}
+
+			addLog("info", "certificate", fmt.Sprintf("自动续签成功: %s", cert.Domain))
+		}
+	}
+}
+
 // ==================== 查看证书内容 ====================
 
 func GetCertificateContent(c *gin.Context) {

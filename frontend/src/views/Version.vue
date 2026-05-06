@@ -190,11 +190,9 @@ onUnmounted(() => {
                 :loading="switching[svc.type]"
                 @click="handleSwitch(svc, ver)"
               >
-                切换
+                🔄 切换到 {{ ver }}
               </el-button>
-              <el-button v-else size="small" disabled>
-                当前版本
-              </el-button>
+              <el-tag v-else type="success" size="small" effect="dark">当前版本</el-tag>
             </div>
           </div>
 

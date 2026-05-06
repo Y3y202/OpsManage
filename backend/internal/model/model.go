@@ -263,4 +263,5 @@ type Certificate struct {
 	Subject   string         `gorm:"size:500" json:"subject"`                // 主题
 	SANs      string         `gorm:"type:text" json:"sans"`                  // 备用域名
 	Status    string         `gorm:"size:20;default:valid" json:"status"`    // valid / expired / about_to_expire
+	AutoRenew bool           `gorm:"default:false" json:"auto_renew"`        // 自动续签
 }
