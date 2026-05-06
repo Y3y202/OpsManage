@@ -138,7 +138,7 @@ func getMySQLVersionInfo() ServiceVersionInfo {
 		}
 	}
 
-	info.AvailableVersions = getAptAvailableVersions("mysql-server")
+	info.AvailableVersions = getMySQLAvailableVersions()
 	info.InstalledVersions = getAptInstalledVersions("mysql-server")
 
 	// 也检查 MariaDB
@@ -148,6 +148,42 @@ func getMySQLVersionInfo() ServiceVersionInfo {
 	}
 
 	return info
+}
+
+// getMySQLAvailableVersions 获取 MySQL 可用版本（含 5.7）
+func getMySQLAvailableVersions() []string {
+	// 从 mysql-server 和 mysql-community-server 获取
+	versionMap := make(map[string]bool)
+
+	for _, pkg := range []string{"mysql-server", "mysql-community-server"} {
+		cmd := exec.Command("apt-cache", "madison", pkg)
+		output, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(output), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			parts := strings.Split(line, "|")
+			if len(parts) >= 2 {
+				version := strings.TrimSpace(parts[1])
+				majorVer := extractMajorVersion(version)
+				if majorVer != "" && isValidVersion(majorVer) {
+					versionMap[majorVer] = true
+				}
+			}
+		}
+	}
+
+	versions := make([]string, 0, len(versionMap))
+	for v := range versionMap {
+		versions = append(versions, v)
+	}
+	sort.Strings(versions)
+	return versions
 }
 
 // ========== PostgreSQL 版本信息 ==========
@@ -517,21 +553,39 @@ func switchMySQLVersion(taskID, targetVersion string) error {
 	setProgress(taskID, "running", 25, "停止 MySQL 服务...")
 	exec.Command("systemctl", "stop", "mysql").Run()
 	exec.Command("systemctl", "stop", "mariadb").Run()
+	exec.Command("systemctl", "stop", "mysqld").Run()
 
 	setProgress(taskID, "running", 35, "安装目标版本...")
 
-	// 查找完整版本号
-	fullVersion := findFullPackageVersion("mysql-server", targetVersion)
-	if fullVersion == "" {
-		fullVersion = targetVersion + "%"
+	var installCmd *exec.Cmd
+	if targetVersion == "5.7" {
+		// MySQL 5.7 使用 mysql-community-server 包（来自 bionic 仓库）
+		fullVersion := findFullPackageVersion("mysql-server", targetVersion)
+		if fullVersion == "" {
+			fullVersion = "5.7.42-1ubuntu18.04"
+		}
+		addInstallLog(taskID, fmt.Sprintf("安装 mysql-community-server %s", fullVersion))
+
+		// 先安装依赖
+		exec.Command("apt-get", "install", "-y", "--allow-downgrades", "mysql-common=5.7*").Run()
+
+		installCmd = exec.Command("apt-get", "install", "-y", "--allow-downgrades",
+			fmt.Sprintf("mysql-community-server=%s", fullVersion),
+			"--fix-broken")
+	} else {
+		// MySQL 8.0+ 使用 mysql-server 包
+		fullVersion := findFullPackageVersion("mysql-server", targetVersion)
+		if fullVersion == "" {
+			fullVersion = targetVersion
+		}
+		addInstallLog(taskID, fmt.Sprintf("安装 mysql-server %s", fullVersion))
+
+		installCmd = exec.Command("apt-get", "install", "-y", "--allow-downgrades",
+			fmt.Sprintf("mysql-server=%s", fullVersion))
 	}
 
-	addInstallLog(taskID, fmt.Sprintf("安装版本: %s", fullVersion))
-
-	cmd = exec.Command("apt-get", "install", "-y", "--allow-downgrades",
-		fmt.Sprintf("mysql-server=%s", fullVersion))
-	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
-	output, err := cmd.CombinedOutput()
+	installCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	output, err := installCmd.CombinedOutput()
 	if err != nil {
 		addInstallLog(taskID, fmt.Sprintf("安装失败: %s", string(output)))
 		exec.Command("systemctl", "start", "mysql").Run()
@@ -539,7 +593,9 @@ func switchMySQLVersion(taskID, targetVersion string) error {
 	}
 
 	setProgress(taskID, "running", 75, "启动 MySQL 服务...")
-	exec.Command("systemctl", "start", "mysql").Run()
+	if exec.Command("systemctl", "start", "mysql").Run() != nil {
+		exec.Command("systemctl", "start", "mysqld").Run()
+	}
 
 	setProgress(taskID, "running", 90, "验证版本...")
 	newVersion := getMySQLVersion()
@@ -659,6 +715,19 @@ func switchRedisVersion(taskID, targetVersion string) error {
 
 // findFullPackageVersion 查找包的完整版本号
 func findFullPackageVersion(packageName, majorVersion string) string {
+	// 先查指定包名
+	result := findFullVersionFromMadison(packageName, majorVersion)
+	if result != "" {
+		return result
+	}
+	// 对于 MySQL，也查 mysql-community-server
+	if packageName == "mysql-server" {
+		return findFullVersionFromMadison("mysql-community-server", majorVersion)
+	}
+	return ""
+}
+
+func findFullVersionFromMadison(packageName, majorVersion string) string {
 	cmd := exec.Command("apt-cache", "madison", packageName)
 	output, err := cmd.Output()
 	if err != nil {
