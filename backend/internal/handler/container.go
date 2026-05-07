@@ -1,12 +1,15 @@
 package handler
 
 import (
+	"net/url"
 	"opsmanage/internal/config"
 	"opsmanage/internal/model"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // ListContainers 获取容器列表
@@ -56,11 +59,14 @@ func ListContainers(c *gin.Context) {
 }
 
 type CreateContainerReq struct {
-	Name    string `json:"name" binding:"required"`
-	Image   string `json:"image" binding:"required"`
-	Ports   string `json:"ports"`
-	Volumes string `json:"volumes"`
-	Env     string `json:"env"`
+	Name          string `json:"name" binding:"required"`
+	Image         string `json:"image" binding:"required"`
+	Ports         string `json:"ports"`
+	Volumes       string `json:"volumes"`
+	Env           string `json:"env"`
+	Command       string `json:"command"`
+	RestartPolicy string `json:"restart_policy"`
+	Network       string `json:"network"`
 }
 
 // CreateContainer 创建容器
@@ -79,22 +85,98 @@ func CreateContainer(c *gin.Context) {
 		return
 	}
 
-	container := model.Container{
-		Name:      req.Name,
-		Image:     req.Image,
-		Ports:     req.Ports,
-		Volumes:   req.Volumes,
-		Env:       req.Env,
-		Status:    "created",
+	args := []string{"run", "-d", "--name", req.Name}
+	for _, port := range splitDockerField(req.Ports) {
+		args = append(args, "-p", port)
+	}
+	for _, volume := range splitDockerField(req.Volumes) {
+		args = append(args, "-v", volume)
+	}
+	for _, env := range splitDockerField(req.Env) {
+		args = append(args, "-e", env)
+	}
+	if strings.TrimSpace(req.RestartPolicy) != "" {
+		args = append(args, "--restart", strings.TrimSpace(req.RestartPolicy))
+	}
+	if strings.TrimSpace(req.Network) != "" {
+		args = append(args, "--network", strings.TrimSpace(req.Network))
+	}
+	args = append(args, req.Image)
+	if strings.TrimSpace(req.Command) != "" {
+		args = append(args, strings.Fields(req.Command)...)
 	}
 
+	out, err := exec.Command("docker", args...).CombinedOutput()
+	if err != nil {
+		fail(c, 500, "创建容器失败: "+string(out))
+		return
+	}
+	containerID := strings.TrimSpace(string(out))
+	container := model.Container{
+		Name:        req.Name,
+		Image:       req.Image,
+		Ports:       req.Ports,
+		Volumes:     req.Volumes,
+		Env:         req.Env,
+		Status:      "running",
+		NetworkID:   req.Network,
+		ContainerID: containerID,
+	}
 	if err := config.DB.Create(&container).Error; err != nil {
-		fail(c, 500, "创建失败: "+err.Error())
+		addLog("warn", "container", "容器已创建但保存记录失败: "+req.Name+" ("+err.Error()+")")
+		success(c, gin.H{"container_id": containerID, "warning": "容器已创建但保存记录失败"})
 		return
 	}
 
 	addLog("info", "container", "创建容器: "+container.Name+" (镜像: "+container.Image+")")
 	success(c, container)
+}
+
+func splitDockerField(value string) []string {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == '\n' || r == ',' || r == ';'
+	})
+	items := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			items = append(items, part)
+		}
+	}
+	return items
+}
+
+func resolveContainerRef(id string) (string, *model.Container, error) {
+	decoded, err := url.PathUnescape(id)
+	if err == nil && decoded != "" {
+		id = decoded
+	}
+	var container model.Container
+	if numericID, err := strconv.Atoi(id); err == nil {
+		if err := config.DB.First(&container, numericID).Error; err == nil {
+			if container.ContainerID != "" {
+				return container.ContainerID, &container, nil
+			}
+			return strconv.Itoa(numericID), &container, nil
+		} else if err != gorm.ErrRecordNotFound {
+			return "", nil, err
+		}
+	}
+	if err := config.DB.Where("container_id = ? OR name = ?", id, id).First(&container).Error; err == nil {
+		if container.ContainerID != "" {
+			return container.ContainerID, &container, nil
+		}
+		return container.Name, &container, nil
+	} else if err != gorm.ErrRecordNotFound {
+		return "", nil, err
+	}
+	return id, nil, nil
+}
+
+func updateContainerStatus(container *model.Container, status string) {
+	if container != nil && container.ID != 0 {
+		config.DB.Model(container).Update("status", status)
+	}
 }
 
 // GetContainer 获取容器详情
@@ -106,13 +188,21 @@ func CreateContainer(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /containers/{id} [get]
 func GetContainer(c *gin.Context) {
-	id := c.Param("id")
-	var container model.Container
-	if err := config.DB.First(&container, id).Error; err != nil {
+	ref, container, err := resolveContainerRef(c.Param("id"))
+	if err != nil {
+		fail(c, 500, "查询失败: "+err.Error())
+		return
+	}
+	if container != nil {
+		success(c, container)
+		return
+	}
+	out, err := exec.Command("docker", "inspect", ref).CombinedOutput()
+	if err != nil {
 		fail(c, 404, "未找到")
 		return
 	}
-	success(c, container)
+	success(c, gin.H{"inspect": string(out)})
 }
 
 // DeleteContainer 删除容器
@@ -124,17 +214,20 @@ func GetContainer(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /containers/{id} [delete]
 func DeleteContainer(c *gin.Context) {
-	id := c.Param("id")
-	var container model.Container
-	if err := config.DB.First(&container, id).Error; err != nil {
-		fail(c, 404, "未找到")
+	ref, container, err := resolveContainerRef(c.Param("id"))
+	if err != nil {
+		fail(c, 500, "查询失败: "+err.Error())
 		return
 	}
-	if container.ContainerID != "" {
-		exec.Command("docker", "rm", "-f", container.ContainerID).Run()
+	out, err := exec.Command("docker", "rm", "-f", ref).CombinedOutput()
+	if err != nil {
+		fail(c, 500, "删除失败: "+string(out))
+		return
 	}
-	config.DB.Delete(&container)
-	success(c, nil)
+	if container != nil && container.ID != 0 {
+		config.DB.Delete(container)
+	}
+	success(c, gin.H{"msg": "容器已删除"})
 }
 
 // StartContainer 启动容器
@@ -146,18 +239,17 @@ func DeleteContainer(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /containers/{id}/start [post]
 func StartContainer(c *gin.Context) {
-	id := c.Param("id")
-	var container model.Container
-	if err := config.DB.First(&container, id).Error; err != nil {
-		fail(c, 404, "未找到")
+	ref, container, err := resolveContainerRef(c.Param("id"))
+	if err != nil {
+		fail(c, 500, "查询失败: "+err.Error())
 		return
 	}
-	out, err := exec.Command("docker", "start", container.ContainerID).CombinedOutput()
+	out, err := exec.Command("docker", "start", ref).CombinedOutput()
 	if err != nil {
 		fail(c, 500, "启动失败: "+string(out))
 		return
 	}
-	config.DB.Model(&container).Update("status", "running")
+	updateContainerStatus(container, "running")
 	success(c, gin.H{"status": "running"})
 }
 
@@ -170,18 +262,17 @@ func StartContainer(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /containers/{id}/stop [post]
 func StopContainer(c *gin.Context) {
-	id := c.Param("id")
-	var container model.Container
-	if err := config.DB.First(&container, id).Error; err != nil {
-		fail(c, 404, "未找到")
+	ref, container, err := resolveContainerRef(c.Param("id"))
+	if err != nil {
+		fail(c, 500, "查询失败: "+err.Error())
 		return
 	}
-	out, err := exec.Command("docker", "stop", container.ContainerID).CombinedOutput()
+	out, err := exec.Command("docker", "stop", ref).CombinedOutput()
 	if err != nil {
 		fail(c, 500, "停止失败: "+string(out))
 		return
 	}
-	config.DB.Model(&container).Update("status", "stopped")
+	updateContainerStatus(container, "stopped")
 	success(c, gin.H{"status": "stopped"})
 }
 
@@ -194,18 +285,17 @@ func StopContainer(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /containers/{id}/restart [post]
 func RestartContainer(c *gin.Context) {
-	id := c.Param("id")
-	var container model.Container
-	if err := config.DB.First(&container, id).Error; err != nil {
-		fail(c, 404, "未找到")
+	ref, container, err := resolveContainerRef(c.Param("id"))
+	if err != nil {
+		fail(c, 500, "查询失败: "+err.Error())
 		return
 	}
-	out, err := exec.Command("docker", "restart", container.ContainerID).CombinedOutput()
+	out, err := exec.Command("docker", "restart", ref).CombinedOutput()
 	if err != nil {
 		fail(c, 500, "重启失败: "+string(out))
 		return
 	}
-	config.DB.Model(&container).Update("status", "running")
+	updateContainerStatus(container, "running")
 	success(c, gin.H{"status": "running"})
 }
 
@@ -258,9 +348,9 @@ func ListImages(c *gin.Context) {
 			continue
 		}
 		images = append(images, map[string]string{
-			"name":  parts[0],
-			"id":    parts[1],
-			"size":  parts[2],
+			"name": parts[0],
+			"id":   parts[1],
+			"size": parts[2],
 		})
 	}
 	success(c, images)
@@ -275,15 +365,14 @@ func ListImages(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /containers/{id}/logs [get]
 func GetContainerLogs(c *gin.Context) {
-	id := c.Param("id")
-	var container model.Container
-	if err := config.DB.First(&container, id).Error; err != nil {
-		fail(c, 404, "未找到")
+	ref, _, err := resolveContainerRef(c.Param("id"))
+	if err != nil {
+		fail(c, 500, "查询失败: "+err.Error())
 		return
 	}
-	out, err := exec.Command("docker", "logs", "--tail", "100", container.ContainerID).CombinedOutput()
+	out, err := exec.Command("docker", "logs", "--tail", "200", ref).CombinedOutput()
 	if err != nil {
-		fail(c, 500, "获取日志失败")
+		fail(c, 500, "获取日志失败: "+string(out))
 		return
 	}
 	success(c, gin.H{"logs": string(out)})

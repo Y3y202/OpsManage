@@ -10,7 +10,8 @@
     "serve:test": "http-server ./dist-test -o",
     "svgo": "svgo -f src/assets/icons",
     "generate:icons": "fa-iconify-tools",
-    "lint": "vue-tsc -b"
+    "lint": "vue-tsc -b",
+    "test:unit": "vitest run"
   },
   "dependencies": {
     "@fantastic-admin/components": "workspace:*",
@@ -79,6 +80,7 @@
     "vite-plugin-fake-server": "catalog:",
     "vite-plugin-vue-devtools": "catalog:",
     "vue-echarts": "catalog:",
-    "vue-tsc": "catalog:"
+    "vue-tsc": "catalog:",
+    "vitest": "latest"
   }
 }
