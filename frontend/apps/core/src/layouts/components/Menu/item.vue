@@ -19,6 +19,8 @@ const props = withDefaults(
 const { generateTitle } = useAppMenu()
 
 const rootMenu = inject(rootMenuInjectionKey)!
+const router = useRouter()
+const route = useRoute()
 
 const itemRef = ref<HTMLElement>()
 
@@ -35,6 +37,27 @@ const isItemActive = computed(() => {
 const icon = computed(() => {
   return props.item.meta?.icon
 })
+
+function handleNavigate(event?: MouseEvent, navigate?: (event?: MouseEvent) => void) {
+  if (props.subMenu) {
+    return
+  }
+  const target = props.uniqueKey.at(-1) ?? ''
+  if (!target) {
+    return
+  }
+  if (props.item.meta?.link) {
+    return
+  }
+  event?.preventDefault()
+  rootMenu.handleMenuItemClick(target)
+  if (route.path !== target) {
+    router.push(target)
+  }
+  else {
+    navigate?.(event)
+  }
+}
 
 defineExpose({
   ref: itemRef,
@@ -66,7 +89,7 @@ defineExpose({
             'py-3': rootMenu.isMenuPopup && level !== 0,
           })" :title="generateTitle(item.meta?.title)" v-on="{
             ...(!subMenu && {
-              click: navigate,
+              click: (event: MouseEvent) => handleNavigate(event, navigate),
             }),
           }"
         >

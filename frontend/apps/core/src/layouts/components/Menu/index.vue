@@ -96,6 +96,7 @@ function setSubMenusActive(index: string) {
 }
 
 const handleMenuItemClick: MenuInjection['handleMenuItemClick'] = (index) => {
+  activeIndex.value = index
   if (props.mode === 'horizontal' || props.collapse) {
     expandMenus.value = []
   }
