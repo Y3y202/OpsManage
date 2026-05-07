@@ -198,15 +198,32 @@ install_mysql() {
     progress 15 "配置 MySQL 仓库..."
     log_info "配置 MySQL APT 仓库..."
 
-    # 下载并安装 MySQL APT 配置包
+    # 确定 MySQL 版本系列
+    local mysql_series="8.0"
+    local mysql_repo_dist="mysql-8.0"
+    if [ -n "$VERSION" ] && [ "$VERSION" != "latest" ]; then
+        local major_ver
+        major_ver=$(echo "$VERSION" | cut -d. -f1)
+        if [ "$major_ver" = "5.7" ]; then
+            mysql_series="5.7"
+            mysql_repo_dist="mysql-5.7"
+            log_info "将安装 MySQL 5.7 系列"
+        fi
+    fi
+
+    # 配置 MySQL APT 仓库
     cd /tmp
-    local apt_config_url="https://dev.mysql.com/get/mysql-apt-config_0.8.29-1_all.deb"
-    if wget -q "$apt_config_url" -O mysql-apt-config.deb 2>/dev/null; then
-        export DEBIAN_FRONTEND=noninteractive
-        dpkg -i mysql-apt-config.deb 2>/dev/null || true
-        rm -f mysql-apt-config.deb
+
+    if [ "$mysql_series" = "5.7" ]; then
+        # MySQL 5.7 使用 bionic 仓库
+        log_info "添加 MySQL 5.7 仓库..."
+        curl -fsSL https://repo.mysql.com/RPM-GPG-KEY-mysql-2023 | gpg --dearmor --yes -o /usr/share/keyrings/mysql-archive-keyring.gpg 2>/dev/null || true
+        echo "deb [signed-by=/usr/share/keyrings/mysql-archive-keyring.gpg] http://repo.mysql.com/apt/ubuntu bionic ${mysql_repo_dist}" > /etc/apt/sources.list.d/mysql.list
     else
-        log_info "跳过 MySQL APT 配置，使用系统仓库"
+        # MySQL 8.0 使用 noble 仓库
+        log_info "添加 MySQL 8.0 仓库..."
+        curl -fsSL https://repo.mysql.com/RPM-GPG-KEY-mysql-2023 | gpg --dearmor --yes -o /usr/share/keyrings/mysql-archive-keyring.gpg 2>/dev/null || true
+        echo "deb [signed-by=/usr/share/keyrings/mysql-archive-keyring.gpg] http://repo.mysql.com/apt/ubuntu noble ${mysql_repo_dist}" > /etc/apt/sources.list.d/mysql.list
     fi
 
     update_sources
@@ -216,9 +233,10 @@ install_mysql() {
     log_info "安装 MySQL（这可能需要几分钟）..."
 
     export DEBIAN_FRONTEND=noninteractive
+
+    # 优先安装具体版本
     if [ -n "$VERSION" ] && [ "$VERSION" != "latest" ]; then
         log_info "尝试安装 MySQL ${VERSION}..."
-        # 查询可用版本
         local avail_ver
         avail_ver=$(apt-cache madison mysql-server | grep "$VERSION" | head -1 | awk '{print $3}')
         if [ -n "$avail_ver" ]; then
@@ -245,9 +263,12 @@ install_mysql() {
     progress 80 "正在配置安全设置..."
     if [ -n "$ROOT_PASS" ]; then
         log_info "设置 root 密码..."
+        # MySQL 5.7 使用 mysql_native_password
         mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${ROOT_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || \
         mysql -u root --skip-password -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${ROOT_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || \
         log_info "密码设置跳过（可能已设置）"
+    else
+        log_info "跳过 root 密码设置（未提供）"
     fi
 
     # 安全配置（忽略错误）

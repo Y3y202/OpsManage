@@ -276,6 +276,89 @@ func GetDBInstance(c *gin.Context) {
 	c.JSON(http.StatusOK, instance)
 }
 
+// UpdateDBInstance 更新实例
+// PUT /api/databases/instances/:id
+func UpdateDBInstance(c *gin.Context) {
+	var instance model.DBInstance
+	if err := config.DB.First(&instance, c.Param("id")).Error; err != nil {
+		fail(c, 404, "实例不存在")
+		return
+	}
+
+	var req struct {
+		Name     string `json:"name"`
+		RootPass string `json:"root_pass"`
+		Port     int    `json:"port"`
+		Remark   string `json:"remark"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, 400, err.Error())
+		return
+	}
+
+	if req.Name != "" {
+		instance.Name = req.Name
+	}
+	if req.RootPass != "" {
+		instance.RootPass = req.RootPass
+	}
+	if req.Port > 0 {
+		instance.Port = req.Port
+	}
+	if req.Remark != "" {
+		instance.Remark = req.Remark
+	}
+
+	config.DB.Save(&instance)
+	ok(c, instance)
+}
+
+// UpdateDBInstancePassword 修改实例 root 密码
+// PUT /api/databases/instances/:id/password
+func UpdateDBInstancePassword(c *gin.Context) {
+	var instance model.DBInstance
+	if err := config.DB.First(&instance, c.Param("id")).Error; err != nil {
+		fail(c, 404, "实例不存在")
+		return
+	}
+
+	var req struct {
+		Password string `json:"password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, 400, err.Error())
+		return
+	}
+
+	var err error
+	switch instance.Type {
+	case "mysql":
+		err = runMySQLExec(fmt.Sprintf(
+			"ALTER USER 'root'@'localhost' IDENTIFIED BY '%s'; FLUSH PRIVILEGES;",
+			req.Password))
+	case "postgresql":
+		// PostgreSQL 需要使用系统用户权限修改
+		err = runPSQLExec(fmt.Sprintf(
+			"ALTER USER postgres WITH PASSWORD '%s';", req.Password))
+	case "redis":
+		err = exec.Command("redis-cli", "CONFIG", "SET", "requirepass", req.Password).Run()
+	default:
+		fail(c, 400, "不支持的数据库类型")
+		return
+	}
+
+	if err != nil {
+		fail(c, 500, "修改密码失败: "+err.Error())
+		return
+	}
+
+	// 更新数据库中保存的密码
+	instance.RootPass = req.Password
+	config.DB.Save(&instance)
+
+	okMsg(c, nil, "密码修改成功")
+}
+
 // DBInstanceAction 对实例执行操作 (start/stop/restart/install)
 // POST /api/databases/instances/:id/:action
 func DBInstanceAction(c *gin.Context) {
@@ -892,6 +975,51 @@ func CreateDBUser(c *gin.Context) {
 	config.DB.Create(&user)
 
 		ok(c, user)
+}
+
+// UpdateDBUserPassword 修改数据库用户密码
+// PUT /api/databases/users/:uid/password
+func UpdateDBUserPassword(c *gin.Context) {
+	var user model.DBUser
+	if err := config.DB.First(&user, c.Param("uid")).Error; err != nil {
+		fail(c, 404, "用户记录不存在")
+		return
+	}
+
+	var instance model.DBInstance
+	config.DB.First(&instance, user.InstanceID)
+
+	var req struct {
+		Password string `json:"password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, 400, err.Error())
+		return
+	}
+
+	var err error
+	switch instance.Type {
+	case "mysql":
+		err = runMySQLExec(fmt.Sprintf(
+			"ALTER USER '%s'@'%s' IDENTIFIED BY '%s'; FLUSH PRIVILEGES;",
+			user.Username, user.Host, req.Password))
+	case "postgresql":
+		err = runPSQLExec(fmt.Sprintf(
+			"ALTER USER %s WITH PASSWORD '%s';", user.Username, req.Password))
+	case "redis":
+		err = exec.Command("redis-cli", "ACL", "SETUSER", user.Username,
+			">"+req.Password).Run()
+	default:
+		fail(c, 400, "不支持的数据库类型")
+		return
+	}
+
+	if err != nil {
+		fail(c, 500, "修改密码失败: "+err.Error())
+		return
+	}
+
+	okMsg(c, nil, "密码修改成功")
 }
 
 // DeleteDBUser 删除数据库用户

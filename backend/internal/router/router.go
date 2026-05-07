@@ -87,6 +87,7 @@ func NewServer(cfg *config.Config) *http.Server {
 		db.GET("/instances", handler.ListDBInstances)
 		db.POST("/instances", handler.CreateDBInstance)
 		db.GET("/instances/:id", handler.GetDBInstance)
+		db.PUT("/instances/:id", handler.UpdateDBInstance)
 		db.POST("/instances/:id/:action", handler.DBInstanceAction)
 		db.GET("/instances/:id/config", handler.DBInstanceConfig)
 		db.PUT("/instances/:id/config", handler.DBInstanceConfig)
@@ -101,7 +102,11 @@ func NewServer(cfg *config.Config) *http.Server {
 		// 用户管理
 		db.GET("/instances/:id/users", handler.ListDBUsers)
 		db.POST("/instances/:id/users", handler.CreateDBUser)
+		db.PUT("/users/:uid/password", handler.UpdateDBUserPassword)
 		db.DELETE("/users/:did", handler.DeleteDBUser)
+
+	// 实例密码管理
+		db.PUT("/instances/:id/password", handler.UpdateDBInstancePassword)
 
 		// 备份管理
 		db.GET("/instances/:id/backups", handler.ListDBBackups)

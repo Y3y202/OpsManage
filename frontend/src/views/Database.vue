@@ -73,7 +73,7 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="240" fixed="right">
+          <el-table-column label="操作" width="300" fixed="right">
             <template #default="{ row }">
               <el-button size="small" type="primary" @click="selectInstance(row)">
                 <el-icon><Monitor /></el-icon> 管理
@@ -81,6 +81,9 @@
               <el-button size="small" :type="row.status === 'running' ? 'warning' : 'success'" @click="handleInstanceAction(row)">
                 <el-icon v-if="row.status === 'running'"><VideoPause /></el-icon>
                 <el-icon v-else><VideoPlay /></el-icon>
+              </el-button>
+              <el-button size="small" type="warning" @click="showChangeInstancePassword(row)">
+                <el-icon><Key /></el-icon> 改密
               </el-button>
               <el-button size="small" type="danger" @click="handleDeleteInstance(row)">
                 <el-icon><Delete /></el-icon>
@@ -144,8 +147,11 @@
             <el-table-column prop="host" label="主机" width="120" />
             <el-table-column prop="db_name" label="授权数据库" width="150" />
             <el-table-column prop="privileges" label="权限" width="120" />
-            <el-table-column label="操作" width="80">
+            <el-table-column label="操作" width="160" fixed="right">
               <template #default="{ row }">
+                <el-button size="small" type="warning" @click="showChangeUserPassword(row)">
+                  <el-icon><Key /></el-icon> 改密
+                </el-button>
                 <el-button size="small" type="danger" @click="handleDeleteUser(row)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
@@ -285,6 +291,25 @@
       </template>
     </el-dialog>
 
+    <!-- 修改密码对话框 -->
+    <el-dialog v-model="passwordDialogVisible" :title="passwordDialogTitle" width="450px" destroy-on-close>
+      <el-form :model="passwordForm" label-width="100px">
+        <el-form-item label="目标">
+          {{ passwordForm.target_name }}
+        </el-form-item>
+        <el-form-item label="新密码" required>
+          <el-input v-model="passwordForm.password" type="password" show-password placeholder="输入新密码" />
+        </el-form-item>
+        <el-form-item label="确认密码" required>
+          <el-input v-model="passwordForm.confirm_password" type="password" show-password placeholder="再次输入新密码" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="passwordDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleChangePassword" :loading="saving">确认修改</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 配置编辑对话框 -->
     <el-dialog v-model="configDialogVisible" title="数据库配置" width="700px" destroy-on-close>
       <div class="config-editor">
@@ -310,13 +335,14 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Coin, DataLine, TrendCharts, Download, VideoPlay, VideoPause,
-  Refresh, Setting, Plus, Monitor, Delete, RefreshLeft
+  Refresh, Setting, Plus, Monitor, Delete, RefreshLeft, Key
 } from '@element-plus/icons-vue'
 import {
   getDBServiceStatus, listDBInstances, createDBInstance, dbInstanceAction,
   getDBInstanceConfig, saveDBInstanceConfig,
   listDBDatabases, createDBDatabase, deleteDBDatabase, syncDBDatabases,
-  listDBUsers, createDBUser, deleteDBUser,
+  listDBUsers, createDBUser, deleteDBUser, updateDBUserPassword,
+  updateDBInstancePassword,
   listDBBackups, createDBBackup, restoreDBBackup
 } from '@/api/database_new'
 
@@ -338,7 +364,18 @@ const saving = ref(false)
 const instanceDialogVisible = ref(false)
 const databaseDialogVisible = ref(false)
 const userDialogVisible = ref(false)
+const passwordDialogVisible = ref(false)
 const configDialogVisible = ref(false)
+
+// 密码修改相关
+const passwordDialogTitle = ref('修改密码')
+const passwordDialogType = ref<'instance' | 'user'>('instance')
+const passwordForm = ref({
+  target_id: 0,
+  target_name: '',
+  password: '',
+  confirm_password: ''
+})
 
 const instanceForm = ref({
   name: '',
@@ -523,6 +560,19 @@ async function handleDeleteInstance(instance: any) {
   ElMessage.info('暂不支持删除实例')
 }
 
+// 修改实例 root 密码
+function showChangeInstancePassword(instance: any) {
+  passwordDialogTitle.value = `修改 ${instance.name} 的 Root 密码`
+  passwordDialogType.value = 'instance'
+  passwordForm.value = {
+    target_id: instance.id,
+    target_name: instance.name,
+    password: '',
+    confirm_password: ''
+  }
+  passwordDialogVisible.value = true
+}
+
 // 数据库管理
 async function loadDatabases() {
   if (!selectedInstance.value) return
@@ -625,6 +675,45 @@ async function handleDeleteUser(user: any) {
     loadUsers()
   } catch (e: any) {
     ElMessage.error(e.message || '删除失败')
+  }
+}
+
+// 修改用户密码
+function showChangeUserPassword(user: any) {
+  passwordDialogTitle.value = `修改用户 ${user.username} 的密码`
+  passwordDialogType.value = 'user'
+  passwordForm.value = {
+    target_id: user.id,
+    target_name: user.username,
+    password: '',
+    confirm_password: ''
+  }
+  passwordDialogVisible.value = true
+}
+
+async function handleChangePassword() {
+  if (passwordForm.value.password !== passwordForm.value.confirm_password) {
+    ElMessage.error('两次输入的密码不一致')
+    return
+  }
+  if (!passwordForm.value.password) {
+    ElMessage.error('密码不能为空')
+    return
+  }
+
+  saving.value = true
+  try {
+    if (passwordDialogType.value === 'user') {
+      await updateDBUserPassword(passwordForm.value.target_id, passwordForm.value.password)
+    } else {
+      await updateDBInstancePassword(selectedInstance.value?.id, passwordForm.value.password)
+    }
+    ElMessage.success('密码修改成功')
+    passwordDialogVisible.value = false
+  } catch (e: any) {
+    ElMessage.error(e.message || '修改失败')
+  } finally {
+    saving.value = false
   }
 }
 

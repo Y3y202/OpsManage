@@ -62,8 +62,18 @@ export function createDBUser(instanceId: number, data: any) {
   return request.post(`/databases/instances/${instanceId}/users`, data)
 }
 
+export function updateDBUserPassword(userId: number, password: string) {
+  return request.put(`/databases/users/${userId}/password`, { password })
+}
+
 export function deleteDBUser(id: number) {
   return request.delete(`/databases/users/${id}`)
+}
+
+// ========== 实例密码管理 ==========
+
+export function updateDBInstancePassword(instanceId: number, password: string) {
+  return request.put(`/databases/instances/${instanceId}/password`, { password })
 }
 
 // ========== 备份管理 ==========
