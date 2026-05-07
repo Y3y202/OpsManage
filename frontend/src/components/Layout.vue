@@ -48,6 +48,12 @@ async function handleLogout() {
   router.push('/login')
 }
 
+function handleMenuSelect(index: string) {
+  if (index && index !== route.path) {
+    router.push(index)
+  }
+}
+
 onMounted(() => { userStore.fetchProfile() })
 </script>
 
@@ -70,7 +76,7 @@ onMounted(() => { userStore.fetchProfile() })
         :collapse-transition="false"
         :default-openeds="['网站-group']"
         class="sidebar-menu"
-        router
+        @select="handleMenuSelect"
       >
         <template v-for="item in menuItems" :key="item.path || item.title">
           <!-- 有子菜单 -->
@@ -87,6 +93,7 @@ onMounted(() => { userStore.fetchProfile() })
               v-for="child in item.children"
               :key="child.path"
               :index="child.path"
+              @click="handleMenuSelect(child.path)"
             >
               <el-icon><component :is="child.icon" /></el-icon>
               <template #title>{{ child.title }}</template>
@@ -97,6 +104,7 @@ onMounted(() => { userStore.fetchProfile() })
             v-else
             :index="item.path"
             class="menu-item"
+            @click="handleMenuSelect(item.path)"
           >
             <el-icon><component :is="item.icon" /></el-icon>
             <template #title>{{ item.title }}</template>

@@ -239,7 +239,15 @@ onUnmounted(() => {
         <div class="progress-message">{{ progressMessage }}</div>
 
         <div class="progress-logs" ref="logContainer">
-          <div v-for="(log, i) in progressLogs" :key="i" class="log-line">
+          <div
+            v-for="(log, i) in progressLogs"
+            :key="i"
+            class="log-line"
+            :class="{
+              success: log.includes('✅'),
+              error: log.includes('❌'),
+            }"
+          >
             {{ log }}
           </div>
         </div>
@@ -431,11 +439,11 @@ onUnmounted(() => {
   word-break: break-all;
 }
 
-.log-line:contains('✅') {
+.log-line.success {
   color: #4ec9b0;
 }
 
-.log-line:contains('❌') {
+.log-line.error {
   color: #f48771;
 }
 </style>
