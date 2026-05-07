@@ -1,31 +1,42 @@
 {
-  "name": "frontend",
-  "private": true,
-  "version": "0.0.0",
+  "name": "opsmanage-frontend",
   "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24"
   },
-  "dependencies": {
-    "@element-plus/icons-vue": "^2.3.2",
-    "@xterm/xterm": "^6.0.0",
-    "axios": "^1.15.2",
-    "echarts": "^6.0.0",
-    "element-plus": "^2.13.7",
-    "pinia": "^3.0.4",
-    "vue": "^3.5.32",
-    "vue-echarts": "^8.0.1",
-    "vue-router": "^4.6.4",
-    "xterm": "^5.3.0"
+  "scripts": {
+    "dev": "pnpm --filter @fantastic-admin/core run dev",
+    "build": "pnpm --filter @fantastic-admin/core run build",
+    "lint": "pnpm --filter @fantastic-admin/core run lint"
   },
   "devDependencies": {
-    "@types/node": "^24.12.2",
-    "@vitejs/plugin-vue": "^6.0.6",
-    "@vue/tsconfig": "^0.9.1",
-    "typescript": "~6.0.2",
-    "vite": "^8.0.10",
-    "vue-tsc": "^3.2.7"
+    "@antfu/eslint-config": "catalog:",
+    "@clack/prompts": "catalog:",
+    "@fantastic-admin/themes": "workspace:*",
+    "@iconify/json": "catalog:",
+    "@stylistic/stylelint-config": "catalog:",
+    "@types/node": "catalog:",
+    "@unocss/core": "catalog:",
+    "@unocss/eslint-plugin": "catalog:",
+    "autoprefixer": "catalog:",
+    "bumpp": "catalog:",
+    "cz-git": "catalog:",
+    "eslint": "catalog:",
+    "lint-staged": "catalog:",
+    "npm-run-all2": "catalog:",
+    "simple-git-hooks": "catalog:",
+    "stylelint": "catalog:",
+    "stylelint-config-recess-order": "catalog:",
+    "stylelint-config-standard-scss": "catalog:",
+    "stylelint-config-standard-vue": "catalog:",
+    "stylelint-scss": "catalog:",
+    "taze": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "unbuild": "catalog:",
+    "unocss": "catalog:",
+    "unocss-preset-animations": "catalog:"
   }
 }
